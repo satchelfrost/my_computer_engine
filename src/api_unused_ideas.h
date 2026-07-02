@@ -1,5 +1,5 @@
-#ifndef MY_COMPUTER_H_
-#define MY_COMPUTER_H_
+#ifndef ITS_A_COMPUTER_H_
+#define ITS_A_COMPUTER_H_
 
 /* fundamental functions */
 typedef struct { float r, g, b, a; } Color;
@@ -84,13 +84,13 @@ void draw_plane(Vector2 size, Color color);                                     
 void draw_grid(int slices, float spacing);                                            // draw a grid 
 
 /* 3D models */
-Model load_model(const char *file_name);       // load a 3D model
-void unload_model(Model m);                    // unload 3D model
-void draw_model(Model m, Color tint);          // draw 3D model with tint
-void draw_model_wires(Model m, Color tint);    // draw 3D wireframe model
-void draw_model_points(Model m, Color tint);   // draw 3D model as points
-Bounding_Box get_model_bounding_box(Model m);  // get the bounding box of the 3D model
-void draw_bounding_box(Bounding_Box b);        // draw the bounding box
+Model load_model(const char *file_name);      // load a 3D model
+void unload_model(Model m);                   // unload 3D model
+void draw_model(Model m, Color tint);         // draw 3D model with tint
+void draw_model_wires(Model m, Color tint);   // draw 3D wireframe model
+void draw_model_points(Model m, Color tint);  // draw 3D model as points
+Bounding_Box get_model_bounding_box(Model m); // get the bounding box of the 3D model
+void draw_bounding_box(Bounding_Box b);       // draw the bounding box
 
 /* animations */
 Animation *load_model_animations(const char *file_name, int *anim_count); // Load model animations from file
@@ -113,4 +113,4 @@ void restart_sound(Sound s);             // restart sound to beginning
 void is_sound_playing(Sound s);          // check if sound is currently playing
 void set_sound_volume(Sound s);          // set the volume of this sound
 
-#endif // MY_COMPUTER_H_
+#endif // ITS_A_COMPUTER_H_
