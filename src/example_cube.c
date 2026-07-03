@@ -95,39 +95,46 @@ static struct {
     {.position = {0.0f, 1.0f, 0.0f},          .color = VIOLET},
 };
 
-static uint32_t tetrahedron_indices[] = {
-    0, 3, 1,
-    0, 2, 3,
-    0, 1, 2,
-    3, 2, 1,
-};
+static uint32_t tetrahedron_indices[] = { 0, 3, 1, 0, 2, 3, 0, 1, 2, 3, 2, 1, };
+
+enum {
+    MODEL_CUBE,
+    MODEL_TRIANGLE,
+    MODEL_TETRAHEDRON,
+    MODEL_BUNNY,
+    MODEL_COUNT,
+} model = 0;
 
 int main()
 {
     init_window(1600, 900, "cube");
 
-    Model cube = {0};
-    // Model triangle = {0};
-    // Model tetrahedron = {0};
+    Model models[MODEL_COUNT] = {0};
+
+    /* load primitive models */
     for (size_t i = 0; i < ARRAY_LEN(cube_verts); i++) {
-        da_append(&cube.host_mem.positions, cube_verts[i].position);
-        da_append(&cube.host_mem.colors, color_to_uint32_t(cube_verts[i].color));
-        da_append(&cube.host_mem.normals, cube_verts[i].normal);
-        da_append(&cube.host_mem.indices, i);
-        // da_append(&triangle.host_mem.positions, triangle_verts[i].position);
-        // da_append(&triangle.host_mem.colors, color_to_uint32_t(triangle_verts[i].color));
-        // da_append(&triangle.host_mem.indices, i);
-        // da_append(&tetrahedron.host_mem.positions, tetrahedron_verts[i].position);
-        // da_append(&tetrahedron.host_mem.colors, color_to_uint32_t(tetrahedron_verts[i].color));
+        da_append(&models[MODEL_CUBE].cpu.positions, cube_verts[i].position);
+        da_append(&models[MODEL_CUBE].cpu.colors, color_to_uint32_t(cube_verts[i].color));
+        da_append(&models[MODEL_CUBE].cpu.normals, cube_verts[i].normal);
+        da_append(&models[MODEL_CUBE].cpu.indices, i);
     }
-    // for (size_t i = 0; i < ARRAY_LEN(tetrahedron_indices); i++)
-    //     da_append(&tetrahedron.host_mem.indices, tetrahedron_indices[i]);
+    for (size_t i = 0; i < ARRAY_LEN(tetrahedron_verts); i++) {
+        da_append(&models[MODEL_TETRAHEDRON].cpu.positions, tetrahedron_verts[i].position);
+        da_append(&models[MODEL_TETRAHEDRON].cpu.colors, color_to_uint32_t(tetrahedron_verts[i].color));
+    }
+    for (size_t i = 0; i < ARRAY_LEN(triangle_verts); i++) {
+        da_append(&models[MODEL_TRIANGLE].cpu.positions, triangle_verts[i].position);
+        da_append(&models[MODEL_TRIANGLE].cpu.colors, color_to_uint32_t(triangle_verts[i].color));
+        da_append(&models[MODEL_TRIANGLE].cpu.indices, i);
+    }
+    for (size_t i = 0; i < ARRAY_LEN(tetrahedron_indices); i++)
+        da_append(&models[MODEL_TETRAHEDRON].cpu.indices, tetrahedron_indices[i]);
 
-    load_model_gpu(&cube);
-    // load_model_gpu(&triangle);
-    // load_model_gpu(&tetrahedron);
+    /* note we're not using `load_model_from_obj` because we want to manually call load_model_gpu */
+    models[MODEL_BUNNY] = load_model_from_obj_to_host_mem("assets/bunny.obj");
 
-    Model bunny = load_model_from_obj("assets/bunny.obj");
+    /* load models to the gpu */
+    for (size_t i = 0; i < MODEL_COUNT; i++) load_model_gpu(&models[i]);
 
     Camera camera = {
         .position = {0.0f, 2.0f, 5.0f},
@@ -136,9 +143,9 @@ int main()
         .fovy     = 45.0f,
     };
 
-
     while (!window_should_close()) {
         if (is_key_down(KEY_F)) log_fps();
+        if (is_key_pressed(KEY_SPACE)) model = (model + 1)%MODEL_COUNT;
 
         update_camera_free(&camera);
 
@@ -146,17 +153,13 @@ int main()
             begin_render_pass(BLACK);
                 begin_mode_3D(camera);
                     rotate_y(get_time());
-                    // draw_model(bunny);
-                    draw_model(cube);
+                    draw_model(models[model]);
                 end_mode_3D();
             end_render_pass();
         end_drawing();
     }
 
-    destroy_model(cube);
-    // destroy_model(triangle);
-    // destroy_model(tetrahedron);
-    destroy_model(bunny);
+    for (size_t i = 0; i < MODEL_COUNT; i++) destroy_model(models[i]);
 
     close_window();
 

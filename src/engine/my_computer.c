@@ -88,7 +88,7 @@ enum {
 
 /* standard/default pipelines and buffers */
 static struct {
-    struct { Rvk_Pipeline pl; VkDescriptorSet ds; } triangle_render; // TODO: ds, shouldn't be here
+    struct { Rvk_Pipeline pl; } triangle_render;
 
     Rvk_Buffer uniform_buff;
     struct {
@@ -1114,15 +1114,6 @@ void end_render_pass()
     vkCmdEndRenderPass(ctx.device.cmd_buffs[0]);
 }
 
-void bind_and_draw_buffers(Rvk_Buffer vertex_buffer, Rvk_Buffer index_buffer, size_t index_count)
-{
-    VkCommandBuffer cmd_buff = ctx.device.cmd_buffs[0];
-    VkDeviceSize offsets[] = {0};
-    vkCmdBindVertexBuffers(cmd_buff, 0, 1, &vertex_buffer.info.buffer, offsets);
-    vkCmdBindIndexBuffer(cmd_buff, index_buffer.info.buffer, 0, VK_INDEX_TYPE_UINT32);
-    vkCmdDrawIndexed(cmd_buff, index_count, 1, 0, 0, 0);
-}
-
 void bind_graphics_pipeline(VkPipeline pl)
 {
     VkCommandBuffer cmd_buff = ctx.device.cmd_buffs[0];
@@ -1186,136 +1177,133 @@ void create_model_pipeline()
 
 void destroy_model(Model model)
 {
-    da_free(model.host_mem.positions);
-    da_free(model.host_mem.normals);
-    da_free(model.host_mem.tex_coords);
-    da_free(model.host_mem.tangets);
-    da_free(model.host_mem.colors);
-    da_free(model.host_mem.indices);
+    da_free(model.cpu.positions);
+    da_free(model.cpu.normals);
+    da_free(model.cpu.tex_coords);
+    da_free(model.cpu.tangets);
+    da_free(model.cpu.colors);
+    da_free(model.cpu.indices);
 
-    destroy_buffer(model.gpu_mem.vertex);
-    destroy_buffer(model.gpu_mem.index);
-    destroy_buffer(model.gpu_mem.normal);
-    destroy_buffer(model.gpu_mem.tex_coord);
-    destroy_buffer(model.gpu_mem.tanget);
-    destroy_buffer(model.gpu_mem.color);
+    destroy_buffer(model.gpu.vertex);
+    destroy_buffer(model.gpu.index);
+    destroy_buffer(model.gpu.normal);
+    destroy_buffer(model.gpu.tex_coord);
+    destroy_buffer(model.gpu.tanget);
+    destroy_buffer(model.gpu.color);
 }
 
 void load_model_gpu(Model *model)
 {
-    /* first create the required buffers  */
-    size_t size = model->host_mem.positions.count*sizeof(*model->host_mem.positions.items);
-    assert(model->gpu_mem.vertex.info.buffer == NULL);
-    model->gpu_mem.vertex = create_vertex_buffer(size, model->host_mem.positions.items);
-    size = model->host_mem.indices.count*sizeof(*model->host_mem.indices.items);
-    assert(model->gpu_mem.index.info.buffer == NULL);
-    model->gpu_mem.index = create_index_buffer(size, model->host_mem.indices.items);
+    /* vertex and index buffers are required, everything else is optional */
+    size_t size = model->cpu.positions.count*sizeof(*model->cpu.positions.items);
+    assert(model->gpu.vertex.info.buffer == NULL);
+    model->gpu.vertex = create_vertex_buffer(size, model->cpu.positions.items);
+    size = model->cpu.indices.count*sizeof(*model->cpu.indices.items);
+    assert(model->gpu.index.info.buffer == NULL);
+    model->gpu.index = create_index_buffer(size, model->cpu.indices.items);
 
     /* then create the optional buffers */
-    size = model->host_mem.normals.count*sizeof(*model->host_mem.normals.items);
+    size = model->cpu.normals.count*sizeof(*model->cpu.normals.items);
     if (size) {
-        assert(model->gpu_mem.normal.info.buffer == NULL);
-        model->gpu_mem.normal = create_compute_buffer(size, model->host_mem.normals.items);
+        assert(model->gpu.normal.info.buffer == NULL);
+        model->gpu.normal = create_compute_buffer(size, model->cpu.normals.items);
         model->attribute_mask |= (1<<ATTRIBUTE_NORMAL);
-    } else model->gpu_mem.normal = create_compute_buffer(sizeof(model->nil_buffer), &model->nil_buffer);
+    } else model->gpu.normal = create_compute_buffer(sizeof(model->nil_buffer), &model->nil_buffer);
 
-    size = model->host_mem.tex_coords.count*sizeof(*model->host_mem.tex_coords.items);
+    size = model->cpu.tex_coords.count*sizeof(*model->cpu.tex_coords.items);
     if (size) {
-        assert(model->gpu_mem.tex_coord.info.buffer == NULL);
-        model->gpu_mem.tex_coord = create_compute_buffer(size, model->host_mem.tex_coords.items);
+        assert(model->gpu.tex_coord.info.buffer == NULL);
+        model->gpu.tex_coord = create_compute_buffer(size, model->cpu.tex_coords.items);
         model->attribute_mask |= (1<<ATTRIBUTE_TEX_COORD);
-    } else model->gpu_mem.tex_coord = create_compute_buffer(sizeof(model->nil_buffer), &model->nil_buffer);
+    } else model->gpu.tex_coord = create_compute_buffer(sizeof(model->nil_buffer), &model->nil_buffer);
 
-    size = model->host_mem.colors.count*sizeof(*model->host_mem.colors.items);
+    size = model->cpu.colors.count*sizeof(*model->cpu.colors.items);
     if (size) {
-        assert(model->gpu_mem.color.info.buffer == NULL);
-        model->gpu_mem.color = create_compute_buffer(size, model->host_mem.colors.items);
+        assert(model->gpu.color.info.buffer == NULL);
+        model->gpu.color = create_compute_buffer(size, model->cpu.colors.items);
         model->attribute_mask |= (1<<ATTRIBUTE_COLOR);
-    } else model->gpu_mem.color = create_compute_buffer(sizeof(model->nil_buffer), &model->nil_buffer);
+    } else model->gpu.color = create_compute_buffer(sizeof(model->nil_buffer), &model->nil_buffer);
 
-    size = model->host_mem.tangets.count*sizeof(*model->host_mem.tangets.items);
+    size = model->cpu.tangets.count*sizeof(*model->cpu.tangets.items);
     if (size) {
-        assert(model->gpu_mem.tanget.info.buffer == NULL);
-        model->gpu_mem.tanget = create_compute_buffer(size, model->host_mem.tangets.items);
+        assert(model->gpu.tanget.info.buffer == NULL);
+        model->gpu.tanget = create_compute_buffer(size, model->cpu.tangets.items);
         model->attribute_mask |= (1<<ATTRIBUTE_TANGET);
-    } else model->gpu_mem.tanget = create_compute_buffer(sizeof(model->nil_buffer), &model->nil_buffer);
+    } else model->gpu.tanget = create_compute_buffer(sizeof(model->nil_buffer), &model->nil_buffer);
+
+    /* allocate descriptor set */
+    assert(standard.ds_layouts[DS_LAYOUT_TRIANGLE_RENDER]);
+    vk_allocate_descriptor_sets(ctx.device.logical, &model->gpu.ds,
+                                .descriptorPool = ctx.pool,
+                                .descriptorSetCount = 1,
+                                .pSetLayouts = &standard.ds_layouts[DS_LAYOUT_TRIANGLE_RENDER]);
+
+    /* update descriptor set */
+    VkWriteDescriptorSet writes[] = {
+        {
+            .sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
+            .dstBinding = 0,
+            .descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,
+            .descriptorCount = 1,
+            .dstSet = model->gpu.ds,
+            .pBufferInfo = &standard.uniform_buff.info,
+        },
+        {
+            .sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
+            .dstBinding = 1,
+            .descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,
+            .descriptorCount = 1,
+            .dstSet = model->gpu.ds,
+            .pBufferInfo = &model->gpu.normal.info,
+        },
+        {
+            .sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
+            .dstBinding = 2,
+            .descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,
+            .descriptorCount = 1,
+            .dstSet = model->gpu.ds,
+            .pBufferInfo = &model->gpu.tex_coord.info,
+        },
+        {
+            .sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
+            .dstBinding = 3,
+            .descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,
+            .descriptorCount = 1,
+            .dstSet = model->gpu.ds,
+            .pBufferInfo = &model->gpu.color.info,
+        },
+        {
+            .sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
+            .dstBinding = 4,
+            .descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,
+            .descriptorCount = 1,
+            .dstSet = model->gpu.ds,
+            .pBufferInfo = &model->gpu.tanget.info,
+        },
+    };
+    vkUpdateDescriptorSets(ctx.device.logical, ARRAY_LEN(writes), writes, 0, NULL);
 }
 
 void draw_model(Model model)
 {
-    if (!standard.triangle_render.pl.handle) {
-        create_model_pipeline();
-
-        /* this can probably happen somewhere in load model */
-        assert(standard.ds_layouts[DS_LAYOUT_TRIANGLE_RENDER]);
-        vk_allocate_descriptor_sets(ctx.device.logical, &standard.triangle_render.ds,
-                                    .descriptorPool = ctx.pool,
-                                    .descriptorSetCount = 1,
-                                    .pSetLayouts = &standard.ds_layouts[DS_LAYOUT_TRIANGLE_RENDER]);
-
-        assert(model.gpu_mem.vertex.info.buffer);
-        assert(model.gpu_mem.index.info.buffer);
-        assert(model.gpu_mem.normal.info.buffer);
-        assert(model.gpu_mem.tex_coord.info.buffer);
-        assert(model.gpu_mem.tanget.info.buffer);
-        assert(model.gpu_mem.color.info.buffer);
-
-        // TODO: MAJOR BUG, only temporary
-        /* TODO: we need to think of a better place to update the descriptor sets */
-        VkWriteDescriptorSet writes[] = {
-            {
-                .sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
-                .dstBinding = 0,
-                .descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,
-                .descriptorCount = 1,
-                .dstSet = standard.triangle_render.ds,
-                .pBufferInfo = &standard.uniform_buff.info,
-            },
-            {
-                .sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
-                .dstBinding = 1,
-                .descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,
-                .descriptorCount = 1,
-                .dstSet = standard.triangle_render.ds,
-                .pBufferInfo = &model.gpu_mem.normal.info,
-            },
-            {
-                .sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
-                .dstBinding = 2,
-                .descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,
-                .descriptorCount = 1,
-                .dstSet = standard.triangle_render.ds,
-                .pBufferInfo = &model.gpu_mem.tex_coord.info,
-            },
-            {
-                .sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
-                .dstBinding = 3,
-                .descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,
-                .descriptorCount = 1,
-                .dstSet = standard.triangle_render.ds,
-                .pBufferInfo = &model.gpu_mem.color.info,
-            },
-            {
-                .sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
-                .dstBinding = 4,
-                .descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,
-                .descriptorCount = 1,
-                .dstSet = standard.triangle_render.ds,
-                .pBufferInfo = &model.gpu_mem.tanget.info,
-            },
-        };
-        vkUpdateDescriptorSets(ctx.device.logical, ARRAY_LEN(writes), writes, 0, NULL);
-    }
+    if (!standard.triangle_render.pl.handle) create_model_pipeline();
 
     bind_graphics_pipeline(standard.triangle_render.pl.handle);
     set_viewport_scissor();
     VkCommandBuffer cb = get_command_buffer();
     push_const.model = MatrixToFloatV(get_model());
     push_const.attributes = model.attribute_mask;
-    push_const.color = color_to_uint32_t(MAGENTA);
+    uint32_t color = color_to_uint32_t(model.color);
+    uint32_t default_color = color_to_uint32_t(MAGENTA);
+    push_const.color = color ? color : default_color;
     VkShaderStageFlags flags = VK_SHADER_STAGE_VERTEX_BIT|VK_SHADER_STAGE_FRAGMENT_BIT;
     vkCmdPushConstants(cb, standard.triangle_render.pl.layout, flags, 0, sizeof(push_const), &push_const);
-    vkCmdBindDescriptorSets(cb, VK_PIPELINE_BIND_POINT_GRAPHICS, standard.triangle_render.pl.layout, 0, 1, &standard.triangle_render.ds, 0, NULL);
-    bind_and_draw_buffers(model.gpu_mem.vertex, model.gpu_mem.index, model.host_mem.indices.count);
+    vkCmdBindDescriptorSets(cb, VK_PIPELINE_BIND_POINT_GRAPHICS,
+                            standard.triangle_render.pl.layout, 0, 1,
+                            &model.gpu.ds, 0, NULL);
+    VkDeviceSize offsets[] = {0};
+    vkCmdBindVertexBuffers(cb, 0, 1, &model.gpu.vertex.info.buffer, offsets);
+    vkCmdBindIndexBuffer(cb, model.gpu.index.info.buffer, 0, VK_INDEX_TYPE_UINT32);
+    vkCmdDrawIndexed(cb, model.cpu.indices.count, 1, 0, 0, 0);
 }
 

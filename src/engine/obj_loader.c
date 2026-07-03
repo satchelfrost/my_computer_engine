@@ -53,18 +53,18 @@ Model load_model_from_obj_to_host_mem(const char *file_name)
         int vn_idx = attr.faces[i].vn_idx;
         if (attr.num_vertices) {
             Vector3 v = {attr.vertices[v_idx*3 + 0], attr.vertices[v_idx*3 + 1], attr.vertices[v_idx*3 + 2]};
-            da_append(&model.host_mem.positions, v);
+            da_append(&model.cpu.positions, v);
         }
         if (attr.num_normals) {
             Vector3 n = {attr.normals[vn_idx*3 + 0], attr.normals[vn_idx*3 + 1], attr.normals[vn_idx*3 + 2]};
-            da_append(&model.host_mem.normals, n);
+            da_append(&model.cpu.normals, n);
         }
         if (attr.num_texcoords) {
             Vector2 t = {attr.texcoords[vt_idx*2 + 0], attr.texcoords[vt_idx*2 + 1]};
-            da_append(&model.host_mem.tex_coords, t);
+            da_append(&model.cpu.tex_coords, t);
         }
 
-        da_append(&model.host_mem.indices, i);
+        da_append(&model.cpu.indices, i);
     }
 
     for (size_t i = 0; num_materials && i < attr.num_face_num_verts; i++) {
@@ -79,9 +79,9 @@ Model load_model_from_obj_to_host_mem(const char *file_name)
         uint32_t b = color.z*255.0f;
         uint32_t a = 255;
         uint32_t final_color = a<<24 | b<<16 | g<<8 | r;
-        da_append(&model.host_mem.colors, final_color);
-        da_append(&model.host_mem.colors, final_color);
-        da_append(&model.host_mem.colors, final_color);
+        da_append(&model.cpu.colors, final_color);
+        da_append(&model.cpu.colors, final_color);
+        da_append(&model.cpu.colors, final_color);
     }
 
     tinyobj_attrib_free(&attr);

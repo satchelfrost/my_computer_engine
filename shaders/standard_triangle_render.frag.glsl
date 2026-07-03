@@ -20,6 +20,8 @@ layout(push_constant) uniform constants {
 #define ATTRIBUTE_TANGET    (1<<2)
 #define ATTRIBUTE_COLOR     (1<<3)
 
+#define AMBIENT 0.1f
+
 void main()
 {
     if ((pc.attributes&ATTRIBUTE_NORMAL) > 0) {
@@ -28,8 +30,7 @@ void main()
         vec3 n = normalize(in_normal);
         n = normalize(transpose(inverse(mat3(pc.model)))*n);
         vec3 to_light = normalize(light_pos - world_pos.xyz);
-        float diffuse = dot(n, to_light);
-        // if (diffuse < 0.5) diffuse = 0.05f;
+        float diffuse = max(dot(n, to_light), AMBIENT);
         vec3 rgb = in_color.rgb*diffuse;
         out_color = vec4(rgb, 1.0);
     } else {

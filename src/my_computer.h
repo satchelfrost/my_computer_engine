@@ -354,6 +354,7 @@ typedef enum {
 
 typedef struct {
     uint32_t attribute_mask;
+    Color color;
 
     struct {
         struct {  Vector3 *items; size_t count; size_t capacity; } positions;
@@ -362,7 +363,7 @@ typedef struct {
         struct {  Vector2 *items; size_t count; size_t capacity; } tangets;
         struct { uint32_t *items; size_t count; size_t capacity; } colors;
         struct { uint32_t *items; size_t count; size_t capacity; } indices;
-    } host_mem;
+    } cpu;
 
     size_t nil_buffer;
 
@@ -373,10 +374,12 @@ typedef struct {
         Rvk_Buffer tex_coord;
         Rvk_Buffer tanget;
         Rvk_Buffer color;
-    } gpu_mem;
+        VkDescriptorSet ds;
+    } gpu;
 } Model;
 
 Model load_model_from_obj(const char *file_name);
+Model load_model_from_obj_to_host_mem(const char *file_name);
 void load_model_gpu(Model *model);
 void destroy_model(Model model);
 void draw_model(Model model);
@@ -385,7 +388,7 @@ Rvk_Buffer create_index_buffer(size_t size, void *indices);
 Rvk_Pipeline create_triangle_rvk_pipeline(const char *vert_shader, const char *frag_shader, VkPipelineLayout layout, VkPipelineVertexInputStateCreateInfo vert_input);
 void begin_render_pass(Color color);
 void end_render_pass();
-void bind_and_draw_buffers(Rvk_Buffer vertex_buffer, Rvk_Buffer index_buffer, size_t index_count);
+void draw_indexed(Rvk_Buffer vertex_buffer, Rvk_Buffer index_buffer, size_t index_count);
 void bind_graphics_pipeline(VkPipeline pl);
 void mix_hardware_w_software_frame_buffer();
 
