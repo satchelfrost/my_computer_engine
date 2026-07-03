@@ -88,7 +88,7 @@ enum {
 
 /* standard/default pipelines and buffers */
 static struct {
-    struct { Rvk_Pipeline pl; VkDescriptorSet ds; } triangle_render;
+    struct { Rvk_Pipeline pl; VkDescriptorSet ds; } triangle_render; // TODO: ds, shouldn't be here
 
     Rvk_Buffer uniform_buff;
     struct {
@@ -103,7 +103,7 @@ static struct {
 #define MAX_KEY_PRESSED_QUEUE 16
 #define MAX_CHAR_PRESSED_QUEUE 16
 #define CAMERA_MOVE_SPEED 10.0f
-#define CAMERA_MOUSE_MOVE_SENSITIVITY 0.1f
+#define CAMERA_MOUSE_MOVE_SENSITIVITY 5.0f
 #define CAMERA_ROT_SENSITIVITY 0.1f
 #define GAMEPAD_ROT_SENSITIVITY 1.0f
 #define MAX_MOUSE_BUTTONS 8
@@ -223,6 +223,7 @@ void close_window()
     vkQueueWaitIdle(ctx.device.queue);
 
     r_destroy_rvk_buffer(ctx.device.logical, standard.uniform_buff);
+    destroy_pipeline(standard.triangle_render.pl);
 
     for (size_t i = 0; i < DS_LAYOUT_COUNT; i++)
         vkDestroyDescriptorSetLayout(ctx.device.logical, standard.ds_layouts[i], NULL);
@@ -855,9 +856,9 @@ float get_avg_frame_time()
 void log_fps()
 {
     static int fps = -1;
-    int curr_fps = get_fps();
+    int curr_fps = get_avg_fps();
     if (curr_fps != fps) {
-        printf("FPS: %d (%fms)\n", curr_fps, get_frame_time() * 1000.0f);
+        printf("FPS: %d (%fms)\n", curr_fps, get_avg_frame_time() * 1000.0f);
         fps = curr_fps;
     }
 }
@@ -972,49 +973,47 @@ void destroy_pipeline(Rvk_Pipeline pipeline)
 void setup_required_standard_ds_layouts()
 {
     /* standard_triangle_render.vert.glsl */
-    VkDescriptorSetLayoutBinding example_bindings[] = {
+    VkDescriptorSetLayoutBinding bindings[] = {
         {
             .binding         = 0,
             .descriptorCount = 1,
             .descriptorType  = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,
             .stageFlags      = VK_SHADER_STAGE_VERTEX_BIT,
         },
+        {
+            .binding         = 1,
+            .descriptorCount = 1,
+            .descriptorType  = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,
+            .stageFlags      = VK_SHADER_STAGE_VERTEX_BIT,
+        },
+        {
+            .binding         = 2,
+            .descriptorCount = 1,
+            .descriptorType  = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,
+            .stageFlags      = VK_SHADER_STAGE_VERTEX_BIT,
+        },
+        {
+            .binding         = 3,
+            .descriptorCount = 1,
+            .descriptorType  = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,
+            .stageFlags      = VK_SHADER_STAGE_VERTEX_BIT,
+        },
+        {
+            .binding         = 4,
+            .descriptorCount = 1,
+            .descriptorType  = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,
+            .stageFlags      = VK_SHADER_STAGE_VERTEX_BIT,
+        },
     };
     vk_create_descriptor_set_layout(ctx.device.logical, NULL, &standard.ds_layouts[DS_LAYOUT_TRIANGLE_RENDER],
-                                    .pBindings = example_bindings,
-                                    .bindingCount = ARRAY_LEN(example_bindings));
+                                    .pBindings = bindings,
+                                    .bindingCount = ARRAY_LEN(bindings));
 
-}
-
-void create_required_standard_compute_pipelines()
-{
-    TODO("not implemented");
 }
 
 void init_standard_rendering()
 {
     setup_required_standard_ds_layouts();
-
-    assert(standard.ds_layouts[DS_LAYOUT_TRIANGLE_RENDER]);
-    vk_allocate_descriptor_sets(ctx.device.logical, &standard.triangle_render.ds,
-                                .descriptorPool = ctx.pool,
-                                .descriptorSetCount = 1,
-                                .pSetLayouts = &standard.ds_layouts[DS_LAYOUT_TRIANGLE_RENDER]);
-    VkWriteDescriptorSet writes[] = {
-        {
-            .sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
-            .dstBinding = 0,
-            .descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
-            .descriptorCount = 1,
-            .dstSet = &standard.triangle_render.ds,
-            .pImageInfo = &standard.text.texture.info,
-        },
-    };
-    vkUpdateDescriptorSets(ctx.device.logical, ARRAY_LEN(writes), writes, 0, NULL);
-
-
-    // create_required_standard_compute_pipelines();
-
     standard.uniform_buff = r_create_mapped_uniform_buffer(ctx.device, sizeof(standard.uniform_data));
 }
 
@@ -1150,7 +1149,7 @@ void create_model_pipeline()
     VkPipelineLayout layout = VK_NULL_HANDLE;
     Vulkan_Context ctx = get_vulkan_context();
     VkPushConstantRange pc_range = {
-        .stageFlags = VK_SHADER_STAGE_VERTEX_BIT,
+        .stageFlags = VK_SHADER_STAGE_VERTEX_BIT|VK_SHADER_STAGE_FRAGMENT_BIT,
         .size = sizeof(push_const)
     };
 
@@ -1158,7 +1157,7 @@ void create_model_pipeline()
                               .pushConstantRangeCount = 1,
                               .pPushConstantRanges = &pc_range,
                               .setLayoutCount = 1,
-                              .pSetLayouts = &.ds_layouts[DS_LAYOUT_TRIANGLE_RENDER]);
+                              .pSetLayouts = &standard.ds_layouts[DS_LAYOUT_TRIANGLE_RENDER]);
 
     VkVertexInputAttributeDescription vert_attrs[] = {
         {
@@ -1242,16 +1241,81 @@ void load_model_gpu(Model *model)
     } else model->gpu_mem.tanget = create_compute_buffer(sizeof(model->nil_buffer), &model->nil_buffer);
 }
 
-void draw_model(Model model, Rvk_Pipeline pl)
+void draw_model(Model model)
 {
-    bind_graphics_pipeline(pl.handle);
+    if (!standard.triangle_render.pl.handle) {
+        create_model_pipeline();
+
+        /* this can probably happen somewhere in load model */
+        assert(standard.ds_layouts[DS_LAYOUT_TRIANGLE_RENDER]);
+        vk_allocate_descriptor_sets(ctx.device.logical, &standard.triangle_render.ds,
+                                    .descriptorPool = ctx.pool,
+                                    .descriptorSetCount = 1,
+                                    .pSetLayouts = &standard.ds_layouts[DS_LAYOUT_TRIANGLE_RENDER]);
+
+        assert(model.gpu_mem.vertex.info.buffer);
+        assert(model.gpu_mem.index.info.buffer);
+        assert(model.gpu_mem.normal.info.buffer);
+        assert(model.gpu_mem.tex_coord.info.buffer);
+        assert(model.gpu_mem.tanget.info.buffer);
+        assert(model.gpu_mem.color.info.buffer);
+
+        // TODO: MAJOR BUG, only temporary
+        /* TODO: we need to think of a better place to update the descriptor sets */
+        VkWriteDescriptorSet writes[] = {
+            {
+                .sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
+                .dstBinding = 0,
+                .descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,
+                .descriptorCount = 1,
+                .dstSet = standard.triangle_render.ds,
+                .pBufferInfo = &standard.uniform_buff.info,
+            },
+            {
+                .sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
+                .dstBinding = 1,
+                .descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,
+                .descriptorCount = 1,
+                .dstSet = standard.triangle_render.ds,
+                .pBufferInfo = &model.gpu_mem.normal.info,
+            },
+            {
+                .sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
+                .dstBinding = 2,
+                .descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,
+                .descriptorCount = 1,
+                .dstSet = standard.triangle_render.ds,
+                .pBufferInfo = &model.gpu_mem.tex_coord.info,
+            },
+            {
+                .sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
+                .dstBinding = 3,
+                .descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,
+                .descriptorCount = 1,
+                .dstSet = standard.triangle_render.ds,
+                .pBufferInfo = &model.gpu_mem.color.info,
+            },
+            {
+                .sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
+                .dstBinding = 4,
+                .descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,
+                .descriptorCount = 1,
+                .dstSet = standard.triangle_render.ds,
+                .pBufferInfo = &model.gpu_mem.tanget.info,
+            },
+        };
+        vkUpdateDescriptorSets(ctx.device.logical, ARRAY_LEN(writes), writes, 0, NULL);
+    }
+
+    bind_graphics_pipeline(standard.triangle_render.pl.handle);
     set_viewport_scissor();
     VkCommandBuffer cb = get_command_buffer();
     push_const.model = MatrixToFloatV(get_model());
     push_const.attributes = model.attribute_mask;
-    push_const.color = color_to_uint32_t(WHITE);
-    vkCmdPushConstants(cb, pl.layout, VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(push_const), &push_const);
-    vkCmdBindDescriptorSets(cb, VK_PIPELINE_BIND_POINT_GRAPHICS, pl_layout, 0, 1, &standard.triangle_render.ds, 0, NULL);
+    push_const.color = color_to_uint32_t(MAGENTA);
+    VkShaderStageFlags flags = VK_SHADER_STAGE_VERTEX_BIT|VK_SHADER_STAGE_FRAGMENT_BIT;
+    vkCmdPushConstants(cb, standard.triangle_render.pl.layout, flags, 0, sizeof(push_const), &push_const);
+    vkCmdBindDescriptorSets(cb, VK_PIPELINE_BIND_POINT_GRAPHICS, standard.triangle_render.pl.layout, 0, 1, &standard.triangle_render.ds, 0, NULL);
     bind_and_draw_buffers(model.gpu_mem.vertex, model.gpu_mem.index, model.host_mem.indices.count);
 }
 

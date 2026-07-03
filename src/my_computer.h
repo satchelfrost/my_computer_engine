@@ -379,6 +379,7 @@ typedef struct {
 Model load_model_from_obj(const char *file_name);
 void load_model_gpu(Model *model);
 void destroy_model(Model model);
+void draw_model(Model model);
 Rvk_Buffer create_vertex_buffer(size_t size, void *vertices);
 Rvk_Buffer create_index_buffer(size_t size, void *indices);
 Rvk_Pipeline create_triangle_rvk_pipeline(const char *vert_shader, const char *frag_shader, VkPipelineLayout layout, VkPipelineVertexInputStateCreateInfo vert_input);

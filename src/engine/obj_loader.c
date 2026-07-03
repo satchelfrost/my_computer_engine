@@ -96,6 +96,6 @@ Model load_model_from_obj_to_host_mem(const char *file_name)
 Model load_model_from_obj(const char *file_name)
 {
     Model model = load_model_from_obj_to_host_mem(file_name);
-    load_model_gpu(model);
+    load_model_gpu(&model);
     return model;
 }

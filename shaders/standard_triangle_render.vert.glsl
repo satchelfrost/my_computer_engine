@@ -12,6 +12,7 @@ layout(location = 0) out vec3 normal;
 layout(location = 1) out vec2 uv;
 layout(location = 2) out vec4 color;
 layout(location = 3) out vec4 tanget;
+layout(location = 4) out vec3 out_position;
 
 #define EYE_LEFT  0
 #define EYE_RIGHT 1
@@ -49,8 +50,21 @@ void main()
 {
     gl_Position = ubo.proj[0]*ubo.view[0]*pc.model*vec4(position, 1.0);
 
-    normal = vec3(0.0);
-    uv     = vec2(0.0);
-    color  = unpackUnorm4x8(pc.color);
+    if ((pc.attributes&ATTRIBUTE_NORMAL) > 0) {
+        normal = vec3(normals[gl_VertexIndex*3+0],normals[gl_VertexIndex*3+1],normals[gl_VertexIndex*3+2]);
+    } else {
+        normal = vec3(0.0);
+    }
+
+    uv = vec2(0.0);
+
+    if ((pc.attributes&ATTRIBUTE_COLOR) > 0) {
+        color = unpackUnorm4x8(colors[gl_VertexIndex]);
+    } else {
+        color = unpackUnorm4x8(pc.color);
+    }
+
+    out_position = position;
+
     tanget = vec4(0.0);
 }
