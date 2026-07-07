@@ -13,10 +13,13 @@
 const char *shaders[] = {
     "standard_triangle_render.vert.glsl",
     "standard_triangle_render.frag.glsl",
+    "standard_text.vert.glsl",
+    "standard_text.frag.glsl",
 };
 
 const char *examples[] = {
-    "example_cube",
+    "example_model",
+    "example_text",
 };
 
 bool compile_shaders(Cmd *cmd)

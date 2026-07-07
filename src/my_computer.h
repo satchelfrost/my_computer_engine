@@ -1,14 +1,12 @@
 #ifndef MY_COMPUTER_H_
 #define MY_COMPUTER_H_
 
-// TODO: model matrix shouldn't be in UBO, but instead push constant
 // TODO: bring some of the ideas from creese 2D such as module structure
 // TODO: separate into some behavior into platform_desktop
 // TODO: precompile some of the external modules
 // TODO: make the log level a little more dynamic for rvk
 // TODO: configurable z_near/z_far and ttf bitmap defaults
 // TODO: vulkan context should be at least vk_ctx instead of ctx
-// TODO: make it so that the pipelines are only created when needed (for now it's fine since there's not a lot of pipelines)
 // TODO: resizeable swapchain
 
 #include <stdbool.h>
@@ -339,6 +337,7 @@ void hidden_surface_removal();
 void hole_filling();
 Rvk_Buffer create_compute_buffer(size_t size, void *data);
 void destroy_buffer(Rvk_Buffer buff);
+void destroy_texture(Rvk_Texture texture);
 void compute_to_frag_image_barrier(VkCommandBuffer cb, VkImage image);
 void frag_to_compute_image_barrier(VkCommandBuffer cb, VkImage image);
 void alloc_point_render_ds(VkDescriptorSet *ds);
@@ -386,6 +385,7 @@ void draw_model(Model model);
 Rvk_Buffer create_vertex_buffer(size_t size, void *vertices);
 Rvk_Buffer create_index_buffer(size_t size, void *indices);
 Rvk_Pipeline create_triangle_rvk_pipeline(const char *vert_shader, const char *frag_shader, VkPipelineLayout layout, VkPipelineVertexInputStateCreateInfo vert_input);
+Rvk_Pipeline create_triangle_blend_rvk_pipeline(const char *vert_shader, const char *frag_shader, VkPipelineLayout layout, VkPipelineVertexInputStateCreateInfo vert_input);
 void begin_render_pass(Color color);
 void end_render_pass();
 void draw_indexed(Rvk_Buffer vertex_buffer, Rvk_Buffer index_buffer, size_t index_count);

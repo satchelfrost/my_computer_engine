@@ -77,6 +77,7 @@ static Camera current_camera = {0};
 /* standard descriptor set layouts */
 enum {
     DS_LAYOUT_TRIANGLE_RENDER,
+    DS_LAYOUT_TEXT,
     DS_LAYOUT_COUNT,
 };
 
@@ -89,6 +90,13 @@ enum {
 /* standard/default pipelines and buffers */
 static struct {
     struct { Rvk_Pipeline pl; } triangle_render;
+    struct {
+        Rvk_Pipeline pl;
+        VkDescriptorSet ds;
+        Rvk_Texture bitmap;
+        Rvk_Buffer index;
+        Rvk_Buffer vertex;
+    } text;
 
     Rvk_Buffer uniform_buff;
     struct {
@@ -113,6 +121,15 @@ static struct {
 #define FPS_AVERAGE_TIME_SECONDS 0.5f
 #define FPS_STEP (FPS_AVERAGE_TIME_SECONDS/FPS_CAPTURE_FRAMES_COUNT)
 #define DEAD_ZONE 0.25f
+
+static Vector2 full_screen_quad_verts[] = {
+    {-1.0, -1.0},
+    { 1.0, -1.0},
+    {-1.0,  1.0},
+    { 1.0,  1.0},
+};
+
+static uint16_t full_screen_quad_indices[] = { 0, 1, 2, 2, 1, 3, };
 
 struct {
     int exit_key;
@@ -222,8 +239,12 @@ void close_window()
 {
     vkQueueWaitIdle(ctx.device.queue);
 
-    r_destroy_rvk_buffer(ctx.device.logical, standard.uniform_buff);
+    destroy_texture(standard.text.bitmap);
+    destroy_buffer(standard.text.vertex);
+    destroy_buffer(standard.text.index);
+    destroy_buffer(standard.uniform_buff);
     destroy_pipeline(standard.triangle_render.pl);
+    destroy_pipeline(standard.text.pl);
 
     for (size_t i = 0; i < DS_LAYOUT_COUNT; i++)
         vkDestroyDescriptorSetLayout(ctx.device.logical, standard.ds_layouts[i], NULL);
@@ -908,6 +929,117 @@ void unload_font(Font font)
     free(font.bitmap);
 }
 
+struct {
+    int x;
+    int y;
+    int x0;
+    int y0;
+    int x1;
+    int y1;
+    uint32_t color;
+    int window_width;
+    int window_height;
+} text_push_const;
+
+void create_text_pipeline()
+{
+    VkPipelineLayout layout = VK_NULL_HANDLE;
+    Vulkan_Context ctx = get_vulkan_context();
+    VkPushConstantRange pc_range = {
+        .stageFlags = VK_SHADER_STAGE_VERTEX_BIT|VK_SHADER_STAGE_FRAGMENT_BIT,
+        .size = sizeof(text_push_const)
+    };
+
+    vk_create_pipeline_layout(ctx.device.logical, NULL, &layout,
+                              .pushConstantRangeCount = 1,
+                              .pPushConstantRanges = &pc_range,
+                              .setLayoutCount = 1,
+                              .pSetLayouts = &standard.ds_layouts[DS_LAYOUT_TEXT]);
+
+    VkVertexInputAttributeDescription vert_attrs[] = {
+        {
+            .location = 0,
+            .format   = VK_FORMAT_R32G32_SFLOAT,
+            .offset   =  0,
+        },
+    };
+    VkVertexInputBindingDescription vert_bindings = {
+        .inputRate = VK_VERTEX_INPUT_RATE_VERTEX,
+        .stride    = sizeof(Vector2),
+    };
+    VkPipelineVertexInputStateCreateInfo vertex_input_ci = {
+        .sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO,
+        .vertexBindingDescriptionCount = 1,
+        .pVertexBindingDescriptions = &vert_bindings,
+        .vertexAttributeDescriptionCount = ARRAY_LEN(vert_attrs),
+        .pVertexAttributeDescriptions = vert_attrs,
+    };
+
+    standard.text.pl = create_triangle_blend_rvk_pipeline("shaders/standard_text.vert.glsl.spv",
+                                                          "shaders/standard_text.frag.glsl.spv",
+                                                          layout,
+                                                          vertex_input_ci);
+
+    /* create and upload quad vertex buffer */
+    standard.text.vertex = create_vertex_buffer(sizeof(full_screen_quad_verts), full_screen_quad_verts);
+    standard.text.index  = create_index_buffer(sizeof(full_screen_quad_indices), full_screen_quad_indices);
+}
+
+void draw_text_at_base(Font font, const char *text, size_t text_len, int x, int y, Color color)
+{
+    if (!standard.text.pl.handle) {
+        create_text_pipeline();
+
+        /* allocate and update descriptor sets for text bitmap */
+        assert(standard.ds_layouts[DS_LAYOUT_TEXT]);
+        if (!vk_allocate_descriptor_sets(ctx.device.logical, &standard.text.ds,
+                                         .descriptorPool = ctx.pool,
+                                         .descriptorSetCount = 1,
+                                         .pSetLayouts = &standard.ds_layouts[DS_LAYOUT_TEXT])) return;
+
+        VkExtent2D extent = {.width = font.bitmap_width, .height = font.bitmap_height};
+        standard.text.bitmap = r_create_texture(ctx.device, extent, font.bitmap, VK_FORMAT_R8_UNORM);
+        assert(standard.text.ds);
+        VkWriteDescriptorSet write = {
+            .sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
+            .dstBinding = 0,
+            .descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
+            .descriptorCount = 1,
+            .dstSet = standard.text.ds,
+            .pImageInfo = &standard.text.bitmap.info,
+        };
+        vkUpdateDescriptorSets(ctx.device.logical, 1, &write, 0, NULL);
+    }
+
+    VkCommandBuffer cb = ctx.device.cmd_buffs[0];
+    vkCmdBindPipeline(cb, 0, standard.text.pl.handle);
+    vkCmdBindDescriptorSets(cb, VK_PIPELINE_BIND_POINT_GRAPHICS, standard.text.pl.layout,
+                            0, 1, &standard.text.ds, 0, NULL);
+    r_cmd_set_viewport_scissor(cb, ctx.swapchain.extent);
+
+    int x_advance = 0;
+    for (size_t c = 0; c < text_len; c++) {
+        uint8_t ch = text[c];
+        if (!(FIRST_CHAR <= ch && ch < (CHAR_COUNT + FIRST_CHAR))) continue;
+        Glyph glyph = font.glyphs[ch-FIRST_CHAR];
+        text_push_const.color = color_to_uint32_t(color);
+        text_push_const.x = x + x_advance + glyph.x_offset;
+        text_push_const.y = y + glyph.y_offset;
+        text_push_const.x0 = glyph.x0;
+        text_push_const.y0 = glyph.y0;
+        text_push_const.x1 = glyph.x1;
+        text_push_const.y1 = glyph.y1;
+        text_push_const.window_width = window.width;
+        text_push_const.window_height= window.height;
+
+        vkCmdPushConstants(cb, standard.text.pl.layout, VK_SHADER_STAGE_VERTEX_BIT|VK_SHADER_STAGE_FRAGMENT_BIT,
+                           0, sizeof(text_push_const), &text_push_const);
+        r_cmd_draw_buffers(cb, standard.text.vertex.info.buffer, standard.text.index.info.buffer, ARRAY_LEN(full_screen_quad_indices));
+
+        x_advance += glyph.x_advance;
+    }
+}
+
 uint32_t color_to_uint32_t(Color color)
 {
     uint32_t r = color.r;
@@ -973,7 +1105,7 @@ void destroy_pipeline(Rvk_Pipeline pipeline)
 void setup_required_standard_ds_layouts()
 {
     /* standard_triangle_render.vert.glsl */
-    VkDescriptorSetLayoutBinding bindings[] = {
+    VkDescriptorSetLayoutBinding tri_bindings[] = {
         {
             .binding         = 0,
             .descriptorCount = 1,
@@ -1006,8 +1138,21 @@ void setup_required_standard_ds_layouts()
         },
     };
     vk_create_descriptor_set_layout(ctx.device.logical, NULL, &standard.ds_layouts[DS_LAYOUT_TRIANGLE_RENDER],
-                                    .pBindings = bindings,
-                                    .bindingCount = ARRAY_LEN(bindings));
+                                    .pBindings = tri_bindings,
+                                    .bindingCount = ARRAY_LEN(tri_bindings));
+
+    /* standard text */
+    VkDescriptorSetLayoutBinding text_bindings[] = {
+        {
+            .binding         = 0,
+            .descriptorCount = 1,
+            .descriptorType  = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
+            .stageFlags      = VK_SHADER_STAGE_FRAGMENT_BIT,
+        }
+    };
+    vk_create_descriptor_set_layout(ctx.device.logical, NULL, &standard.ds_layouts[DS_LAYOUT_TEXT],
+                                    .pBindings = text_bindings,
+                                    .bindingCount = ARRAY_LEN(text_bindings));
 
 }
 
@@ -1025,6 +1170,11 @@ Rvk_Buffer create_compute_buffer(size_t size, void *data)
 void destroy_buffer(Rvk_Buffer buff)
 {
     r_destroy_rvk_buffer(ctx.device.logical, buff);
+}
+
+void destroy_texture(Rvk_Texture texture)
+{
+    r_destroy_texture(ctx.device.logical, texture);
 }
 
 Rvk_Buffer create_vertex_buffer(size_t size, void *vertices)
@@ -1065,6 +1215,65 @@ Rvk_Pipeline create_triangle_rvk_pipeline(const char *vert_shader, const char *f
                                 .pMultisampleState = r_temp_default_multisample_state_ci(),
                                 .pDepthStencilState = r_temp_default_depth_stencil_state_ci(),
                                 .pColorBlendState = r_temp_default_color_blend_state_ci(),
+                                .pDynamicState = r_temp_default_dynamic_state_ci(),
+                                .layout = pl.layout,
+                                .renderPass = ctx.swapchain.render_pass);
+    r_temp_rewind(temp_alloc_save_point);
+
+    vkDestroyShaderModule(ctx.device.logical, stages[0].module, NULL);
+    vkDestroyShaderModule(ctx.device.logical, stages[1].module, NULL);
+    sb_free(sb);
+
+    return pl;
+}
+
+Rvk_Pipeline create_triangle_blend_rvk_pipeline(const char *vert_shader, const char *frag_shader, VkPipelineLayout layout, VkPipelineVertexInputStateCreateInfo vert_input)
+{
+    Rvk_Pipeline pl = {.layout = layout};
+    VkPipelineShaderStageCreateInfo stages[2];
+    String_Builder sb = {0};
+
+    /* load shaders */
+    read_entire_file(vert_shader, &sb);
+    stages[0] = r_create_vertex_stage_ci(ctx.device.logical, sb.count, (uint32_t*)sb.items);
+    assert(stages[0].module);
+    sb.count = 0; // reuse memory
+    read_entire_file(frag_shader, &sb);
+    stages[1] = r_create_fragment_stage_ci(ctx.device.logical, sb.count, (uint32_t*)sb.items);
+    assert(stages[1].module);
+    sb.count = 0;
+
+    /* color blend */
+    VkPipelineColorBlendAttachmentState color_blend = {
+        .colorWriteMask = 0xf, // rgba
+        .blendEnable = VK_TRUE,
+        .colorBlendOp = VK_BLEND_OP_ADD,
+        .srcColorBlendFactor = VK_BLEND_FACTOR_SRC_ALPHA,
+        .dstColorBlendFactor = VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA,
+        .alphaBlendOp = VK_BLEND_OP_ADD,
+        .srcAlphaBlendFactor = VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA,
+        .dstAlphaBlendFactor = VK_BLEND_FACTOR_ZERO,
+    };
+    VkPipelineColorBlendStateCreateInfo color_blend_ci = {
+        .sType = VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO,
+        .attachmentCount = 1,
+        .pAttachments = &color_blend,
+        .logicOp = VK_LOGIC_OP_COPY,
+    };
+
+
+    /* temporary allocator */
+    size_t temp_alloc_save_point = r_temp_save();
+    vk_create_graphics_pipeline(ctx.device.logical, NULL, NULL, &pl.handle,
+                                .stageCount = ARRAY_LEN(stages),
+                                .pStages = stages,
+                                .pVertexInputState = &vert_input,
+                                .pInputAssemblyState = r_temp_default_input_assembly_state_ci(),
+                                .pViewportState = r_temp_default_viewport_state_ci(ctx.swapchain.extent),
+                                .pRasterizationState = r_temp_default_rasterization_state_ci(),
+                                .pMultisampleState = r_temp_default_multisample_state_ci(),
+                                .pDepthStencilState = r_temp_default_depth_stencil_state_ci(),
+                                .pColorBlendState = &color_blend_ci,
                                 .pDynamicState = r_temp_default_dynamic_state_ci(),
                                 .layout = pl.layout,
                                 .renderPass = ctx.swapchain.render_pass);

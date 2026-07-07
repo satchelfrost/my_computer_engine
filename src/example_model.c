@@ -88,6 +88,18 @@ static struct {
 static struct {
     Vector3 position;
     Color color;
+} quad_verts[] = {
+    {.position = {-0.5, -0.5, 0.0}, .color = RED},
+    {.position = { 0.5, -0.5, 0.0}, .color = GREEN},
+    {.position = {-0.5,  0.5, 0.0}, .color = BLUE},
+    {.position = { 0.5,  0.5, 0.0}, .color = GOLD},
+};
+
+static uint32_t quad_indices[] = {0, 1, 2, 2, 1, 3};
+
+static struct {
+    Vector3 position;
+    Color color;
 } tetrahedron_verts[] = {
     {.position = {0.0f, -0.333f, 0.943f},     .color = GOLD},
     {.position = {0.816f, -0.333f, -0.471f},  .color = MAGENTA},
@@ -100,6 +112,7 @@ static uint32_t tetrahedron_indices[] = { 0, 3, 1, 0, 2, 3, 0, 1, 2, 3, 2, 1, };
 enum {
     MODEL_CUBE,
     MODEL_TRIANGLE,
+    MODEL_QUAD,
     MODEL_TETRAHEDRON,
     MODEL_BUNNY,
     MODEL_COUNT,
@@ -122,6 +135,10 @@ int main()
         da_append(&models[MODEL_TETRAHEDRON].cpu.positions, tetrahedron_verts[i].position);
         da_append(&models[MODEL_TETRAHEDRON].cpu.colors, color_to_uint32_t(tetrahedron_verts[i].color));
     }
+    for (size_t i = 0; i < ARRAY_LEN(quad_verts); i++) {
+        da_append(&models[MODEL_QUAD].cpu.positions, quad_verts[i].position);
+        da_append(&models[MODEL_QUAD].cpu.colors, color_to_uint32_t(quad_verts[i].color));
+    }
     for (size_t i = 0; i < ARRAY_LEN(triangle_verts); i++) {
         da_append(&models[MODEL_TRIANGLE].cpu.positions, triangle_verts[i].position);
         da_append(&models[MODEL_TRIANGLE].cpu.colors, color_to_uint32_t(triangle_verts[i].color));
@@ -129,6 +146,8 @@ int main()
     }
     for (size_t i = 0; i < ARRAY_LEN(tetrahedron_indices); i++)
         da_append(&models[MODEL_TETRAHEDRON].cpu.indices, tetrahedron_indices[i]);
+    for (size_t i = 0; i < ARRAY_LEN(quad_indices); i++)
+        da_append(&models[MODEL_QUAD].cpu.indices, quad_indices[i]);
 
     /* note we're not using `load_model_from_obj` because we want to manually call load_model_gpu */
     models[MODEL_BUNNY] = load_model_from_obj_to_host_mem("assets/bunny.obj");
