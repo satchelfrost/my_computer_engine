@@ -12,6 +12,7 @@
  *
  */
 
+#define FONT_SIZE 42
 #define V0 {-0.5f,  0.5f,  0.5f}
 #define V1 {-0.5f,  0.5f, -0.5f}
 #define V2 { 0.5f,  0.5f,  0.5f}
@@ -120,7 +121,9 @@ enum {
 
 int main()
 {
-    init_window(1600, 900, "cube");
+    init_window(800, 450, "cube");
+    Font font = load_font("assets/RobotoMono-Medium.ttf", FONT_SIZE);
+    String_Builder sb = {0};
 
     Model models[MODEL_COUNT] = {0};
 
@@ -174,6 +177,11 @@ int main()
                     rotate_y(get_time());
                     draw_model(models[model]);
                 end_mode_3D();
+
+                // draw FPS counter
+                sb.count = 0;
+                sb_appendf(&sb, "FPS:%d", get_avg_fps());
+                draw_text_at_base(font, sb.items, sb.count, 20, FONT_SIZE, WHITE);
             end_render_pass();
         end_drawing();
     }
