@@ -1,6 +1,8 @@
 #ifndef MY_COMPUTER_H_
 #define MY_COMPUTER_H_
 
+// TODO: organize this file
+
 // TODO: bring some of the ideas from creese 2D such as module structure
 // TODO: separate into some behavior into platform_desktop
 // TODO: precompile some of the external modules
@@ -228,15 +230,17 @@ bool init_window(int width, int height, char *title);
 void close_window();
 bool window_should_close();
 Window get_window();
-void set_software_frame_buffer_size(int width, int height);
-void begin_drawing();
-void clear_background(Color bg_color);
-void end_drawing();
 void poll_input_events(); // called by end_drawing
 void begin_timer();
 void end_timer();
 double get_time();
 double get_frame_time();
+
+void begin_drawing(Color color);
+void end_drawing();
+void begin_render_pass(Color color);
+void end_render_pass();
+void bind_graphics_pipeline(VkPipeline pl);
 
 typedef struct {
     Vector3 position;
@@ -327,72 +331,102 @@ void draw_text_at_base(Font font, const char *text, size_t text_len, int x, int 
 uint32_t color_to_uint32_t(Color color);
 Color color_from_hsv(float hue, float saturation, float value);
 
-VkPipelineShaderStageCreateInfo load_compute_shader(const char *file_path, String_Builder *sb);
-void unload_shader(VkPipelineShaderStageCreateInfo ci);
-void destroy_pipeline(Rvk_Pipeline pipeline);
-void update_render_ds(Rvk_Buffer point_buffer, VkDescriptorSet ds);
-void read_after_write_ssbo_barrier(VkCommandBuffer cb);
-void draw_points(VkDescriptorSet ds, size_t point_count, size_t point_offset);
-void hidden_surface_removal();
-void hole_filling();
-Rvk_Buffer create_compute_buffer(size_t size, void *data);
-void destroy_buffer(Rvk_Buffer buff);
-void destroy_texture(Rvk_Texture texture);
-void compute_to_frag_image_barrier(VkCommandBuffer cb, VkImage image);
-void frag_to_compute_image_barrier(VkCommandBuffer cb, VkImage image);
-void alloc_point_render_ds(VkDescriptorSet *ds);
-void update_point_render_ds(Rvk_Buffer point_buffer, VkDescriptorSet ds);
-
 typedef enum {
     ATTRIBUTE_NORMAL,
-    ATTRIBUTE_TEX_COORD,
+    ATTRIBUTE_UV,
     ATTRIBUTE_TANGET,
     ATTRIBUTE_COLOR,
+    ATTRIBUTE_JOINT_WEIGHT,
     ATTRIBUTE_COUNT,
-} Attribute;
+} Attribute_Mask;
+
+typedef enum {
+    MATERIAL_NO_TEXTURES,
+    MATERIAL_ALBEDO,
+    MATERIAL_METALLIC_ROUGHNESS,
+    MATERIAL_NORMAL,
+    MATERIAL_MASK_COUNT,
+} Material_Mask;
 
 typedef struct {
-    uint32_t attribute_mask;
-    Color color;
-
     struct {
         struct {  Vector3 *items; size_t count; size_t capacity; } positions;
-        struct {  Vector3 *items; size_t count; size_t capacity; } normals;
-        struct {  Vector2 *items; size_t count; size_t capacity; } tex_coords;
-        struct {  Vector2 *items; size_t count; size_t capacity; } tangets;
-        struct { uint32_t *items; size_t count; size_t capacity; } colors;
         struct { uint32_t *items; size_t count; size_t capacity; } indices;
+        struct {  Vector3 *items; size_t count; size_t capacity; } normals;
+        struct {  Vector2 *items; size_t count; size_t capacity; } uvs;
+        struct {  Vector4 *items; size_t count; size_t capacity; } tangets;
+        struct { uint32_t *items; size_t count; size_t capacity; } colors;
+        struct {  Vector4 *items; size_t count; size_t capacity; } joints;
+        struct {  Vector4 *items; size_t count; size_t capacity; } weights;
     } cpu;
 
-    size_t nil_buffer;
+    struct {
+        uint32_t mask;
+        Color color;
+        size_t albedo_image_index;
+        size_t metallic_roughness_image_index;
+        size_t normal_image_index;
+    } material;
 
     struct {
+        uint32_t mask;
         Rvk_Buffer vertex;
         Rvk_Buffer index;
         Rvk_Buffer normal;
-        Rvk_Buffer tex_coord;
+        Rvk_Buffer uv;
         Rvk_Buffer tanget;
         Rvk_Buffer color;
+        Rvk_Buffer joint;
+        Rvk_Buffer weight;
         VkDescriptorSet ds;
     } gpu;
+} Mesh;
+
+typedef enum {
+    IMAGE_TYPE_UNORM,
+    IMAGE_TYPE_SRGB,
+} Creese_Image_Type;
+
+typedef struct {
+    Creese_Image_Type type;
+    int width, height;
+    void *data;
+} Creese_Image;
+
+typedef struct {
+    struct {         Mesh *items; size_t count; size_t capacity; } meshes;
+    struct {  Rvk_Texture *items; size_t count; size_t capacity; } textures;
+    struct { Creese_Image *items; size_t count; size_t capacity; } images;
+    struct { Rvk_Texture texture; Rvk_Buffer buffer; Creese_Image image; uint32_t data; } phony;
 } Model;
 
-Model load_model_from_obj(const char *file_name);
-Model load_model_from_obj_to_host_mem(const char *file_name);
+/* obj */
+Model load_model_from_obj(const char *file_path);
+Model load_model_from_obj_into_memory(const char *file_path);
+
+/* gltf */
+Model load_model_from_gltf_into_memory(const char *file_path);
+
+Creese_Image create_image(const char *file_path);
+Rvk_Texture create_texture(Creese_Image img);
+
 void load_model_gpu(Model *model);
 void destroy_model(Model model);
 void draw_model(Model model);
+
+Rvk_Buffer create_compute_buffer(size_t size, void *data);
 Rvk_Buffer create_vertex_buffer(size_t size, void *vertices);
 Rvk_Buffer create_index_buffer(size_t size, void *indices);
+void destroy_buffer(Rvk_Buffer buff);
+
+void destroy_texture(Rvk_Texture texture);
+
+VkPipelineShaderStageCreateInfo load_compute_shader(const char *file_path, String_Builder *sb);
+void unload_shader(VkPipelineShaderStageCreateInfo ci);
+
 Rvk_Pipeline create_triangle_rvk_pipeline(const char *vert_shader, const char *frag_shader, VkPipelineLayout layout, VkPipelineVertexInputStateCreateInfo vert_input);
 Rvk_Pipeline create_triangle_blend_rvk_pipeline(const char *vert_shader, const char *frag_shader, VkPipelineLayout layout, VkPipelineVertexInputStateCreateInfo vert_input);
-void begin_render_pass(Color color);
-void end_render_pass();
-void draw_indexed(Rvk_Buffer vertex_buffer, Rvk_Buffer index_buffer, size_t index_count);
-void bind_graphics_pipeline(VkPipeline pl);
-void mix_hardware_w_software_frame_buffer();
+void destroy_pipeline(Rvk_Pipeline pipeline);
 
-VkDescriptorSetLayout get_model_ds_layout();
-void bind_to_model_descriptor_set(VkPipelineLayout pl_layout);
 
 #endif // MY_COMPUTER_H_

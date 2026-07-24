@@ -126,34 +126,49 @@ int main()
     String_Builder sb = {0};
 
     Model models[MODEL_COUNT] = {0};
+    Mesh mesh = {0};
 
-    /* load primitive models */
+    /* cube */
     for (size_t i = 0; i < ARRAY_LEN(cube_verts); i++) {
-        da_append(&models[MODEL_CUBE].cpu.positions, cube_verts[i].position);
-        da_append(&models[MODEL_CUBE].cpu.colors, color_to_uint32_t(cube_verts[i].color));
-        da_append(&models[MODEL_CUBE].cpu.normals, cube_verts[i].normal);
-        da_append(&models[MODEL_CUBE].cpu.indices, i);
+        da_append(&mesh.cpu.positions, cube_verts[i].position);
+        da_append(&mesh.cpu.colors, color_to_uint32_t(cube_verts[i].color));
+        da_append(&mesh.cpu.normals, cube_verts[i].normal);
+        da_append(&mesh.cpu.indices, i);
     }
+    da_append(&models[MODEL_CUBE].meshes, mesh);
+
+    /* tetrahedron */
+    mesh = (Mesh){0};
     for (size_t i = 0; i < ARRAY_LEN(tetrahedron_verts); i++) {
-        da_append(&models[MODEL_TETRAHEDRON].cpu.positions, tetrahedron_verts[i].position);
-        da_append(&models[MODEL_TETRAHEDRON].cpu.colors, color_to_uint32_t(tetrahedron_verts[i].color));
-    }
-    for (size_t i = 0; i < ARRAY_LEN(quad_verts); i++) {
-        da_append(&models[MODEL_QUAD].cpu.positions, quad_verts[i].position);
-        da_append(&models[MODEL_QUAD].cpu.colors, color_to_uint32_t(quad_verts[i].color));
-    }
-    for (size_t i = 0; i < ARRAY_LEN(triangle_verts); i++) {
-        da_append(&models[MODEL_TRIANGLE].cpu.positions, triangle_verts[i].position);
-        da_append(&models[MODEL_TRIANGLE].cpu.colors, color_to_uint32_t(triangle_verts[i].color));
-        da_append(&models[MODEL_TRIANGLE].cpu.indices, i);
+        da_append(&mesh.cpu.positions, tetrahedron_verts[i].position);
+        da_append(&mesh.cpu.colors, color_to_uint32_t(tetrahedron_verts[i].color));
     }
     for (size_t i = 0; i < ARRAY_LEN(tetrahedron_indices); i++)
-        da_append(&models[MODEL_TETRAHEDRON].cpu.indices, tetrahedron_indices[i]);
+        da_append(&mesh.cpu.indices, tetrahedron_indices[i]);
+    da_append(&models[MODEL_TETRAHEDRON].meshes, mesh);
+
+    /* quad */
+    mesh = (Mesh){0};
+    for (size_t i = 0; i < ARRAY_LEN(quad_verts); i++) {
+        da_append(&mesh.cpu.positions, quad_verts[i].position);
+        da_append(&mesh.cpu.colors, color_to_uint32_t(quad_verts[i].color));
+    }
     for (size_t i = 0; i < ARRAY_LEN(quad_indices); i++)
-        da_append(&models[MODEL_QUAD].cpu.indices, quad_indices[i]);
+        da_append(&mesh.cpu.indices, quad_indices[i]);
+    da_append(&models[MODEL_QUAD].meshes, mesh);
+
+    /* triangle */
+    mesh = (Mesh){0};
+    for (size_t i = 0; i < ARRAY_LEN(triangle_verts); i++) {
+        da_append(&mesh.cpu.positions, triangle_verts[i].position);
+        da_append(&mesh.cpu.colors, color_to_uint32_t(triangle_verts[i].color));
+        da_append(&mesh.cpu.indices, i);
+    }
+    da_append(&models[MODEL_TRIANGLE].meshes, mesh);
 
     /* note we're not using `load_model_from_obj` because we want to manually call load_model_gpu */
-    models[MODEL_BUNNY] = load_model_from_obj_to_host_mem("assets/bunny.obj");
+    models[MODEL_BUNNY] = load_model_from_obj_into_memory("assets/bunny.obj");
+    models[MODEL_BUNNY].meshes.items[0].material.color = GOLD;
 
     /* load models to the gpu */
     for (size_t i = 0; i < MODEL_COUNT; i++) load_model_gpu(&models[i]);
@@ -171,18 +186,16 @@ int main()
 
         update_camera_free(&camera);
 
-        begin_drawing();
-            begin_render_pass(BLACK);
-                begin_mode_3D(camera);
-                    rotate_y(get_time());
-                    draw_model(models[model]);
-                end_mode_3D();
+        begin_drawing(BLACK);
+            begin_mode_3D(camera);
+                rotate_y(get_time());
+                draw_model(models[model]);
+            end_mode_3D();
 
-                // draw FPS counter
-                sb.count = 0;
-                sb_appendf(&sb, "FPS:%d", get_avg_fps());
-                draw_text_at_base(font, sb.items, sb.count, 20, FONT_SIZE, WHITE);
-            end_render_pass();
+            // draw FPS counter
+            sb.count = 0;
+            sb_appendf(&sb, "FPS:%d", get_avg_fps());
+            draw_text_at_base(font, sb.items, sb.count, 20, FONT_SIZE, WHITE);
         end_drawing();
     }
 

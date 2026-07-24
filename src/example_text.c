@@ -10,12 +10,10 @@ int main()
     String_Builder sb = {0};
 
     while (!window_should_close()) {
-        begin_drawing();
-            begin_render_pass(BLUE);
-                sb.count = 0;
-                sb_appendf(&sb, "FPS:%d", get_avg_fps());
-                draw_text_at_base(font, sb.items, sb.count, 20, FONT_SIZE, BLACK);
-            end_render_pass();
+        begin_drawing(BLUE);
+            sb.count = 0;
+            sb_appendf(&sb, "FPS:%d", get_avg_fps());
+            draw_text_at_base(font, sb.items, sb.count, 20, FONT_SIZE, BLACK);
         end_drawing();
     }
 

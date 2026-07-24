@@ -10,6 +10,13 @@
 #define EXTERNAL SRC "external/"
 #define SHADERS "shaders/"
 
+const char *my_computer_srcs[] = {
+    SRC"my_computer.h",
+    ENGINE"my_computer.c",
+    ENGINE"obj_loader.c",
+    ENGINE"gltf_loader.c",
+};
+
 const char *shaders[] = {
     "standard_triangle_render.vert.glsl",
     "standard_triangle_render.frag.glsl",
@@ -20,6 +27,7 @@ const char *shaders[] = {
 const char *examples[] = {
     "example_model",
     "example_text",
+    "example_gltf",
 };
 
 bool compile_shaders(Cmd *cmd)
@@ -61,15 +69,15 @@ bool build_glfw(Cmd *cmd, const char *target)
 bool build_my_computer(Cmd *cmd, bool force, const char *target)
 {
     const char *build_dir = (target == "linux") ? LINUX : WINDOWS;
-
     const char *o = temp_sprintf("%smy_computer.o", build_dir);
     const char *c = temp_sprintf(ENGINE"my_computer.c");
-    int my_computer_touched = needs_rebuild1(o, c);
+
+    int my_computer_touched = needs_rebuild(o, my_computer_srcs, ARRAY_LEN(my_computer_srcs));
     if (my_computer_touched < 0) {
         nob_log(ERROR, "needs rebuild failed for my_computer");
         return false;
     }
-    if (!my_computer_touched && !force) true;
+    if (!my_computer_touched && !force) return true;
 
     cmd_append(cmd, (target == "linux") ? "gcc" : "x86_64-w64-mingw32-gcc", "-Wall", "-Wextra", "-g");
     if (target == "linux") cmd_append(cmd, "-DVULKAN_VALIDATION_ON"); // only use validation if not windows
@@ -269,8 +277,8 @@ bool launch_exec(Cmd *cmd)
 bool launch_gf2(Cmd *cmd)
 {
     cmd_append(cmd, "gf2");
-    if (config.args.count) cmd_append(cmd, "--args");
     cmd_append(cmd, "-ex", "start");
+    if (config.args.count) cmd_append(cmd, "--args");
     cmd_append(cmd, temp_sprintf("./"LINUX"%s", examples[config.example_number]));
     for (size_t i = 0; i < config.args.count; i++)
         cmd_append(cmd, config.args.items[i]);
@@ -306,7 +314,12 @@ int main(int argc, char **argv)
 
     if (config.run)       if (!launch_exec(&cmd))      return 1;
     if (config.renderdoc) if (!launch_renderdoc(&cmd)) return 1;
-    if (config.debug)     if (!launch_gf2(&cmd))       return 1;
+    if (config.debug) {
+        if (!launch_gf2(&cmd)) {
+            printf("To install gf2 clone https://github.com/nakst/gf\n");
+            return 1;
+        }
+    }
 
     return 0;
 }
