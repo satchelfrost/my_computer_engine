@@ -228,7 +228,6 @@ bool init_window(int width, int height, char *title)
         .extensions = device_exts.items,
         .layer_count = layers.count,
         .layers = layers.items,
-        .atomic_features = true,
     };
     ctx.device = r_create_rvk_device(ctx.instance, ctx.surface, device_config);
     if (!ctx.device.logical) return false;
@@ -1674,6 +1673,33 @@ void draw_model(Model model)
         vkCmdBindIndexBuffer(cb, mesh.gpu.index.info.buffer, 0, VK_INDEX_TYPE_UINT32);
         vkCmdDrawIndexed(cb, mesh.cpu.indices.count, 1, 0, 0, 0);
     }
+}
+
+void draw_mesh(Mesh mesh)
+{
+    if (!standard.triangle_render.pl.handle) create_model_pipeline();
+
+    VkCommandBuffer cb = get_command_buffer();
+    bind_graphics_pipeline(standard.triangle_render.pl.handle);
+    set_viewport_scissor();
+
+    /* at some point we may want to get the model matrix from scene data */
+    tri_render_push_const.model = MatrixToFloatV(get_model());
+
+    tri_render_push_const.attribute_mask = mesh.gpu.mask;
+    tri_render_push_const.material_mask = mesh.material.mask;
+    uint32_t color = color_to_uint32_t(mesh.material.color);
+    uint32_t default_color = color_to_uint32_t(MAGENTA);
+    tri_render_push_const.color = color ? color : default_color;
+    VkShaderStageFlags flags = VK_SHADER_STAGE_VERTEX_BIT|VK_SHADER_STAGE_FRAGMENT_BIT;
+    vkCmdPushConstants(cb, standard.triangle_render.pl.layout, flags, 0, sizeof(tri_render_push_const), &tri_render_push_const);
+    vkCmdBindDescriptorSets(cb, VK_PIPELINE_BIND_POINT_GRAPHICS,
+                            standard.triangle_render.pl.layout, 0, 1,
+                            &mesh.gpu.ds, 0, NULL);
+    VkDeviceSize offsets[] = {0};
+    vkCmdBindVertexBuffers(cb, 0, 1, &mesh.gpu.vertex.info.buffer, offsets);
+    vkCmdBindIndexBuffer(cb, mesh.gpu.index.info.buffer, 0, VK_INDEX_TYPE_UINT32);
+    vkCmdDrawIndexed(cb, mesh.cpu.indices.count, 1, 0, 0, 0);
 }
 
 Creese_Image create_image(const char *file_name)

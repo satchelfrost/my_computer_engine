@@ -413,6 +413,7 @@ Rvk_Texture create_texture(Creese_Image img);
 void load_model_gpu(Model *model);
 void destroy_model(Model model);
 void draw_model(Model model);
+void draw_mesh(Mesh mesh);
 
 Rvk_Buffer create_compute_buffer(size_t size, void *data);
 Rvk_Buffer create_vertex_buffer(size_t size, void *vertices);

@@ -33,7 +33,7 @@ layout(push_constant) uniform constants {
 #define MATERIAL_METALLIC_ROUGHNESS (1<<2)
 #define MATERIAL_NORMAL             (1<<3)
 
-#define AMBIENT 0.1f
+#define AMBIENT 0.3f
 
 vec4 srgb_to_linear(vec4 srgb)
 {
