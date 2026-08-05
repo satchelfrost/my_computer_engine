@@ -42,18 +42,10 @@ const char *cgltf_attr_type_to_str(cgltf_attribute_type attr_type)
 
 void populate_attributes(Mesh *mesh, cgltf_attribute attribute)
 {
-    float *positions = NULL;
-    float *normals   = NULL;
-    float *uvs       = NULL;
-    float *tangets   = NULL;
-    float *colors    = NULL;
-    float *joints    = NULL;
-    float *weights   = NULL;
-
     switch (attribute.type) {
     case cgltf_attribute_type_position:
         assert(attribute.data->type == cgltf_type_vec3);
-        positions = GLTF_ATTR_PTR(attribute.data, float);
+        float *positions = GLTF_ATTR_PTR(attribute.data, float);
         for (size_t i = 0; i < attribute.data->count; i++) {
             Vector3 position = {positions[i*3+0], positions[i*3+1], positions[i*3+2]};
             da_append(&mesh->cpu.positions, position);
@@ -61,7 +53,7 @@ void populate_attributes(Mesh *mesh, cgltf_attribute attribute)
     break;
     case cgltf_attribute_type_normal:
         assert(attribute.data->type == cgltf_type_vec3);
-        normals = GLTF_ATTR_PTR(attribute.data, float);
+        float *normals = GLTF_ATTR_PTR(attribute.data, float);
         for (size_t i = 0; i < attribute.data->count; i++) {
             Vector3 normal = {normals[i*3+0], normals[i*3+1], normals[i*3+2]};
             da_append(&mesh->cpu.normals, normal);
@@ -69,7 +61,7 @@ void populate_attributes(Mesh *mesh, cgltf_attribute attribute)
     break;
     case cgltf_attribute_type_tangent:
         assert(attribute.data->type == cgltf_type_vec4);
-        tangets = GLTF_ATTR_PTR(attribute.data, float);
+        float *tangets = GLTF_ATTR_PTR(attribute.data, float);
         for (size_t i = 0; i < attribute.data->count; i++) {
             Vector4 tanget = {tangets[i*4+0], tangets[i*4+1], tangets[i*4+2], tangets[i*4+3]};
             da_append(&mesh->cpu.tangets, tanget);
@@ -77,7 +69,7 @@ void populate_attributes(Mesh *mesh, cgltf_attribute attribute)
     break;
     case cgltf_attribute_type_texcoord:
         assert(attribute.data->type == cgltf_type_vec2);
-        uvs = GLTF_ATTR_PTR(attribute.data, float);
+        float *uvs = GLTF_ATTR_PTR(attribute.data, float);
         for (size_t i = 0; i < attribute.data->count; i++) {
             Vector2 uv = {uvs[i*2+0], uvs[i*2+1]};
             da_append(&mesh->cpu.uvs, uv);
@@ -85,7 +77,9 @@ void populate_attributes(Mesh *mesh, cgltf_attribute attribute)
     break;
     case cgltf_attribute_type_color:
         assert(attribute.data->type == cgltf_type_vec3 || attribute.data->type == cgltf_type_vec4);
-        colors = GLTF_ATTR_PTR(attribute.data, float);
+        // TODO: may want to handle component type 32f and r_8u
+        assert(attribute.data->component_type == cgltf_component_type_r_32f);
+        float *colors = GLTF_ATTR_PTR(attribute.data, float);
         for (size_t i = 0; i < attribute.data->count; i++) {
             Color c = {0};
             uint32_t color = 0;
@@ -107,18 +101,39 @@ void populate_attributes(Mesh *mesh, cgltf_attribute attribute)
     break;
     case cgltf_attribute_type_joints:
         assert(attribute.data->type == cgltf_type_vec4);
-        joints = GLTF_ATTR_PTR(attribute.data, float);
+        assert(attribute.data->component_type == cgltf_component_type_r_8u);
+        uint8_t *joints = GLTF_ATTR_PTR(attribute.data, uint8_t);
         for (size_t i = 0; i < attribute.data->count; i++) {
-            Vector4 joint = {joints[i*4+0], joints[i*4+1], joints[i*4+2], joints[i*4+3]};
-            da_append(&mesh->cpu.joints, joint);
+            da_append(&mesh->cpu.joints, joints[i*4+0]);
+            da_append(&mesh->cpu.joints, joints[i*4+1]);
+            da_append(&mesh->cpu.joints, joints[i*4+2]);
+            da_append(&mesh->cpu.joints, joints[i*4+3]);
         }
     break;
     case cgltf_attribute_type_weights:
         assert(attribute.data->type == cgltf_type_vec4);
-        weights = GLTF_ATTR_PTR(attribute.data, float);
         for (size_t i = 0; i < attribute.data->count; i++) {
-            Vector4 weight = {weights[i*4+0], weights[i*4+1], weights[i*4+2], weights[i*4+3]};
-            da_append(&mesh->cpu.weights, weight);
+            Vector4 w = {0};
+            if (attribute.data->component_type == cgltf_component_type_r_8u) {
+                uint8_t *weights = GLTF_ATTR_PTR(attribute.data, uint8_t);
+                w.x = weights[i*4+0]/255.0f;
+                w.y = weights[i*4+1]/255.0f;
+                w.z = weights[i*4+2]/255.0f;
+                w.w = weights[i*4+3]/255.0f;
+            } else if (attribute.data->component_type == cgltf_component_type_r_16u) {
+                uint16_t *weights = GLTF_ATTR_PTR(attribute.data, uint16_t);
+                w.x = weights[i*4+0]/65535.0f;
+                w.y = weights[i*4+1]/65535.0f;
+                w.z = weights[i*4+2]/65535.0f;
+                w.w = weights[i*4+3]/65535.0f;
+            } else if (attribute.data->component_type == cgltf_component_type_r_32f) {
+                float *weights = GLTF_ATTR_PTR(attribute.data, float);
+                w.x = weights[i*4+0];
+                w.y = weights[i*4+1];
+                w.z = weights[i*4+2];
+                w.w = weights[i*4+3];
+            }
+            da_append(&mesh->cpu.weights, w);
         }
     break;
     case cgltf_attribute_type_custom:

@@ -2,11 +2,12 @@
 
 #define FLAG_STEREO         (1<<0)
 
-#define ATTRIBUTE_NORMAL        (1<<0)
-#define ATTRIBUTE_UV            (1<<1)
-#define ATTRIBUTE_TANGET        (1<<2)
-#define ATTRIBUTE_COLOR         (1<<3)
-#define ATTRIBUTE_JOINT_WEIGHT  (1<<4)
+#define ATTRIBUTE_NORMAL (1<<0)
+#define ATTRIBUTE_UV     (1<<1)
+#define ATTRIBUTE_TANGET (1<<2)
+#define ATTRIBUTE_COLOR  (1<<3)
+#define ATTRIBUTE_JOINT  (1<<4)
+#define ATTRIBUTE_WEIGHT (1<<4)
 
 layout(location = 0) in vec3 position;
 
@@ -28,27 +29,27 @@ layout(binding = 0) uniform UBO {
 } ubo;
 
 layout(std430, binding = 1) buffer normal_data {
-   float normals[ ];
+    float normals[ ];
 };
 
 layout(std430, binding = 2) buffer uv_data {
-   float uvs[ ];
+    float uvs[ ];
 };
 
 layout(std430, binding = 3) buffer color_data {
-   uint colors[ ];
+    uint colors[ ];
 };
 
 layout(std430, binding = 4) buffer tanget_data {
-   float tangets[ ];
+    float tangets[ ];
 };
 
 layout(std430, binding = 5) buffer joint_data {
-   float joints[ ];
+    uint joints[ ];
 };
 
 layout(std430, binding = 6) buffer weight_data {
-   float weights[ ];
+    float weights[ ];
 };
 
 layout(push_constant) uniform constants {
@@ -84,11 +85,13 @@ void main()
     else
         out_tanget = vec4(0.0);
 
-    if ((pc.attribute_mask&ATTRIBUTE_JOINT_WEIGHT) > 0) {
+    if ((pc.attribute_mask&ATTRIBUTE_JOINT) > 0)
         out_joint = vec4(joints[gl_VertexIndex*4+0],joints[gl_VertexIndex*4+1],joints[gl_VertexIndex*4+2], joints[gl_VertexIndex*4+3]);
-        out_weight = vec4(weights[gl_VertexIndex*4+0],weights[gl_VertexIndex*4+1],weights[gl_VertexIndex*4+2], weights[gl_VertexIndex*4+3]);
-    } else {
+    else
         out_joint = vec4(0.0);
+
+    if ((pc.attribute_mask&ATTRIBUTE_WEIGHT) > 0)
+        out_weight = vec4(weights[gl_VertexIndex*4+0],weights[gl_VertexIndex*4+1],weights[gl_VertexIndex*4+2], weights[gl_VertexIndex*4+3]);
+    else
         out_weight = vec4(0.0);
-    }
 }

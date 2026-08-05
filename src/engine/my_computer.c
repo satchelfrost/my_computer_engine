@@ -1448,10 +1448,8 @@ void destroy_model(Model model)
         if (mesh.gpu.mask & 1<<ATTRIBUTE_UV)     destroy_buffer(mesh.gpu.uv);
         if (mesh.gpu.mask & 1<<ATTRIBUTE_TANGET) destroy_buffer(mesh.gpu.tanget);
         if (mesh.gpu.mask & 1<<ATTRIBUTE_COLOR)  destroy_buffer(mesh.gpu.color);
-        if (mesh.gpu.mask & 1<<ATTRIBUTE_JOINT_WEIGHT) {
-            destroy_buffer(mesh.gpu.joint);
-            destroy_buffer(mesh.gpu.weight);
-        }
+        if (mesh.gpu.mask & 1<<ATTRIBUTE_JOINT)  destroy_buffer(mesh.gpu.joint);
+        if (mesh.gpu.mask & 1<<ATTRIBUTE_WEIGHT) destroy_buffer(mesh.gpu.weight);
     }
 
     for (size_t i = 0; i < model.textures.count; i++) {
@@ -1520,14 +1518,14 @@ void load_model_gpu(Model *model)
         if (size) {
             assert(mesh->gpu.joint.info.buffer == NULL);
             mesh->gpu.joint = create_compute_buffer(size, mesh->cpu.joints.items);
-            mesh->gpu.mask |= 1<<ATTRIBUTE_JOINT_WEIGHT;
+            mesh->gpu.mask |= 1<<ATTRIBUTE_JOINT;
         } else mesh->gpu.joint = model->phony.buffer;
 
         size = mesh->cpu.weights.count*sizeof(*mesh->cpu.weights.items);
         if (size) {
             assert(mesh->gpu.weight.info.buffer == NULL);
             mesh->gpu.weight = create_compute_buffer(size, mesh->cpu.weights.items);
-            mesh->gpu.mask |= 1<<ATTRIBUTE_JOINT_WEIGHT;
+            mesh->gpu.mask |= 1<<ATTRIBUTE_WEIGHT;
         } else mesh->gpu.weight = model->phony.buffer;
 
 

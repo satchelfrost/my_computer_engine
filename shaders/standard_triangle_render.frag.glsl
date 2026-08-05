@@ -22,11 +22,12 @@ layout(push_constant) uniform constants {
     uint material_mask;
 } pc;
 
-#define ATTRIBUTE_NORMAL        (1<<0)
-#define ATTRIBUTE_UV            (1<<1)
-#define ATTRIBUTE_TANGET        (1<<2)
-#define ATTRIBUTE_COLOR         (1<<3)
-#define ATTRIBUTE_JOINT_WEIGHT  (1<<4)
+#define ATTRIBUTE_NORMAL (1<<0)
+#define ATTRIBUTE_UV     (1<<1)
+#define ATTRIBUTE_TANGET (1<<2)
+#define ATTRIBUTE_COLOR  (1<<3)
+#define ATTRIBUTE_JOINT  (1<<4)
+#define ATTRIBUTE_WEIGHT (1<<4)
 
 #define MATERIAL_NO_TEXTURES        (1<<0)
 #define MATERIAL_ALBEDO             (1<<1)

@@ -336,7 +336,8 @@ typedef enum {
     ATTRIBUTE_UV,
     ATTRIBUTE_TANGET,
     ATTRIBUTE_COLOR,
-    ATTRIBUTE_JOINT_WEIGHT,
+    ATTRIBUTE_JOINT,
+    ATTRIBUTE_WEIGHT,
     ATTRIBUTE_COUNT,
 } Attribute_Mask;
 
@@ -356,7 +357,7 @@ typedef struct {
         struct {  Vector2 *items; size_t count; size_t capacity; } uvs;
         struct {  Vector4 *items; size_t count; size_t capacity; } tangets;
         struct { uint32_t *items; size_t count; size_t capacity; } colors;
-        struct {  Vector4 *items; size_t count; size_t capacity; } joints;
+        struct {  uint8_t *items; size_t count; size_t capacity; } joints;
         struct {  Vector4 *items; size_t count; size_t capacity; } weights;
     } cpu;
 
