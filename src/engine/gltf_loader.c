@@ -264,3 +264,10 @@ Model load_model_from_gltf_into_memory(const char *file_path)
 
     return model;
 }
+
+Model load_model_from_gltf(const char *file_path)
+{
+    Model model = load_model_from_gltf_into_memory(file_path);
+    load_model_gpu(&model);
+    return model;
+}

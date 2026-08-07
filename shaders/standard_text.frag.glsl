@@ -25,6 +25,13 @@ vec3 uint_color_to_vec3(uint color)
     return vec3(r/255.0f, g/255.0f, b/255.0f);
 }
 
+vec4 srgb_to_linear(vec4 srgb)
+{
+	vec3 b_less = step(vec3(0.04045),srgb.xyz);
+	vec3 lin_out = mix(srgb.xyz/vec3(12.92), pow((srgb.xyz+vec3(0.055))/vec3(1.055),vec3(2.4)), b_less);
+	return vec4(lin_out,srgb.w);
+}
+
 void main()
 {
     // +--------------------+ <--- screen
@@ -49,7 +56,7 @@ void main()
         // if (!inside_bitmap) discard;
         float alpha = texelFetch(bitmap, texel_coords, 0).r;
         vec3 color_rgb = uint_color_to_vec3(pc.color);
-        out_color = vec4(color_rgb, alpha);
+        out_color = srgb_to_linear(vec4(color_rgb, alpha));
     } else {
         discard;
     }

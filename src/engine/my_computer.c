@@ -26,6 +26,7 @@
 /* engine modules (note: must update nob.c) */
 #include "gltf_loader.c"
 #include "obj_loader.c"
+#include "geometry.c"
 
 #ifndef Z_NEAR
     #define Z_NEAR 0.1
@@ -42,6 +43,8 @@
 #endif
 
 #define FPS_CAPTURE_FRAMES_COUNT 30
+
+#define DEFAULT_FONT_SIZE 42
 
 #define IMAGE_WORKGROUP_SIZE 16.0f
 #define POINT_WORKGROUP_SIZE 1024.0f
@@ -101,6 +104,8 @@ static struct {
         Rvk_Texture bitmap;
         Rvk_Buffer index;
         Rvk_Buffer vertex;
+        Font default_font;
+        String_Builder sb;
     } text;
 
     Rvk_Buffer uniform_buff;
@@ -110,6 +115,8 @@ static struct {
     } uniform_data;
 
     VkDescriptorSetLayout ds_layouts[DS_LAYOUT_COUNT];
+
+    Model shapes_3D;
 
     struct {
         bool disable_render_pass;
@@ -247,12 +254,14 @@ void close_window()
 {
     vkQueueWaitIdle(ctx.device.queue);
 
+    unload_font(standard.text.default_font);
     destroy_texture(standard.text.bitmap);
     destroy_buffer(standard.text.vertex);
     destroy_buffer(standard.text.index);
     destroy_buffer(standard.uniform_buff);
     destroy_pipeline(standard.triangle_render.pl);
     destroy_pipeline(standard.text.pl);
+    destroy_model(standard.shapes_3D);
 
     for (size_t i = 0; i < DS_LAYOUT_COUNT; i++)
         vkDestroyDescriptorSetLayout(ctx.device.logical, standard.ds_layouts[i], NULL);
@@ -999,7 +1008,14 @@ void create_text_pipeline()
     standard.text.index  = create_index_buffer(sizeof(full_screen_quad_indices), full_screen_quad_indices);
 }
 
-void draw_text_at_base(Font font, const char *text, size_t text_len, int x, int y, Color color)
+void draw_text_at_base(const char *text, size_t text_len, int x, int y, Color color)
+{
+    if (!standard.text.default_font.bitmap)
+        standard.text.default_font = load_font("assets/RobotoMono-Medium.ttf", DEFAULT_FONT_SIZE);
+    draw_text_at_base_ex(standard.text.default_font, text, text_len, x, y, color);
+}
+
+void draw_text_at_base_ex(Font font, const char *text, size_t text_len, int x, int y, Color color)
 {
     if (!standard.text.pl.handle) {
         create_text_pipeline();
@@ -1388,7 +1404,7 @@ struct {
     uint32_t material_mask;
 } tri_render_push_const;
 
-void create_model_pipeline()
+void init_tri_model_pipeline()
 {
     VkPipelineLayout layout = VK_NULL_HANDLE;
     Vulkan_Context ctx = get_vulkan_context();
@@ -1644,7 +1660,7 @@ void load_model_gpu(Model *model)
 
 void draw_model(Model model)
 {
-    if (!standard.triangle_render.pl.handle) create_model_pipeline();
+    if (!standard.triangle_render.pl.handle) init_tri_model_pipeline();
 
     VkCommandBuffer cb = get_command_buffer();
     bind_graphics_pipeline(standard.triangle_render.pl.handle);
@@ -1675,7 +1691,7 @@ void draw_model(Model model)
 
 void draw_mesh(Mesh mesh)
 {
-    if (!standard.triangle_render.pl.handle) create_model_pipeline();
+    if (!standard.triangle_render.pl.handle) init_tri_model_pipeline();
 
     VkCommandBuffer cb = get_command_buffer();
     bind_graphics_pipeline(standard.triangle_render.pl.handle);
@@ -1726,4 +1742,89 @@ Rvk_Texture create_texture(Creese_Image img)
     }
 
     return r_create_texture(ctx.device, extent, img.data, format);
+}
+
+void init_standard_3D_shapes()
+{
+    /* cube */
+    Mesh mesh = {0};
+    for (size_t i = 0; i < ARRAY_LEN(cube_verts); i++) {
+        da_append(&mesh.cpu.positions, cube_verts[i].position);
+        da_append(&mesh.cpu.colors, color_to_uint32_t(cube_verts[i].color));
+        da_append(&mesh.cpu.normals, cube_verts[i].normal);
+        da_append(&mesh.cpu.indices, i);
+    }
+    da_append(&standard.shapes_3D.meshes, mesh);
+
+    /* tetrahedron */
+    mesh = (Mesh){0};
+    for (size_t i = 0; i < ARRAY_LEN(tetrahedron_verts); i++) {
+        da_append(&mesh.cpu.positions, tetrahedron_verts[i].position);
+        da_append(&mesh.cpu.colors, color_to_uint32_t(tetrahedron_verts[i].color));
+    }
+    for (size_t i = 0; i < ARRAY_LEN(tetrahedron_indices); i++)
+        da_append(&mesh.cpu.indices, tetrahedron_indices[i]);
+    da_append(&standard.shapes_3D.meshes, mesh);
+
+    /* quad */
+    mesh = (Mesh){0};
+    for (size_t i = 0; i < ARRAY_LEN(quad_verts); i++) {
+        da_append(&mesh.cpu.positions, quad_verts[i].position);
+        da_append(&mesh.cpu.colors, color_to_uint32_t(quad_verts[i].color));
+    }
+    for (size_t i = 0; i < ARRAY_LEN(quad_indices); i++)
+        da_append(&mesh.cpu.indices, quad_indices[i]);
+    da_append(&standard.shapes_3D.meshes, mesh);
+
+    /* triangle */
+    mesh = (Mesh){0};
+    for (size_t i = 0; i < ARRAY_LEN(triangle_verts); i++) {
+        da_append(&mesh.cpu.positions, triangle_verts[i].position);
+        da_append(&mesh.cpu.colors, color_to_uint32_t(triangle_verts[i].color));
+        da_append(&mesh.cpu.indices, i);
+    }
+    da_append(&standard.shapes_3D.meshes, mesh);
+
+    load_model_gpu(&standard.shapes_3D);
+}
+
+void draw_shape_3D(Shape_3D shape)
+{
+    if (!standard.shapes_3D.meshes.count) init_standard_3D_shapes();
+    if (shape >= 0 && shape < SHAPE_3D_COUNT)
+        draw_mesh(standard.shapes_3D.meshes.items[shape]);
+}
+
+void draw_fps()
+{
+    if (!standard.text.default_font.bitmap)
+        standard.text.default_font = load_font("assets/RobotoMono-Medium.ttf", DEFAULT_FONT_SIZE);
+
+    standard.text.sb.count = 0;
+    int fps = get_avg_fps();
+    sb_appendf(&standard.text.sb, "FPS:%d", fps);
+    Color color = GREEN;
+    if (fps < 30 && fps >= 15) color = ORANGE;
+    else if (fps < 15) color = RED;
+    draw_text_at_base_ex(standard.text.default_font, standard.text.sb.items, standard.text.sb.count, 20, 42, color);
+}
+
+int measure_text(const char *text, size_t text_len)
+{
+    if (!standard.text.default_font.bitmap)
+        standard.text.default_font = load_font("assets/RobotoMono-Medium.ttf", DEFAULT_FONT_SIZE);
+
+    return measure_text_ex(standard.text.default_font, text, text_len);
+}
+
+int measure_text_ex(Font font, const char *text, size_t text_len)
+{
+    size_t width = 0;
+    for (size_t i = 0; i < text_len; i++) {
+        uint8_t ch = text[i];
+        if (!(FIRST_CHAR <= ch && ch < (CHAR_COUNT + FIRST_CHAR))) continue;
+        width += font.glyphs[ch-FIRST_CHAR].x_advance;
+    }
+
+    return width;
 }

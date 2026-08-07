@@ -15,6 +15,7 @@ const char *my_computer_srcs[] = {
     ENGINE"my_computer.c",
     ENGINE"obj_loader.c",
     ENGINE"gltf_loader.c",
+    ENGINE"geometry.c",
 };
 
 const char *shaders[] = {
@@ -28,6 +29,7 @@ const char *examples[] = {
     "example_model",
     "example_text",
     "example_gltf",
+    "example_gltf_animation",
 };
 
 bool compile_shaders(Cmd *cmd)

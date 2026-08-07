@@ -327,7 +327,10 @@ typedef struct {
 
 Font load_font(const char *file_path, int font_height);
 void unload_font(Font font);
-void draw_text_at_base(Font font, const char *text, size_t text_len, int x, int y, Color color);
+void draw_text_at_base(const char *text, size_t text_len, int x, int y, Color color);
+void draw_text_at_base_ex(Font font, const char *text, size_t text_len, int x, int y, Color color);
+int measure_text(const char *text, size_t text_len);
+int measure_text_ex(Font font, const char *text, size_t text_len);
 uint32_t color_to_uint32_t(Color color);
 Color color_from_hsv(float hue, float saturation, float value);
 
@@ -406,15 +409,27 @@ Model load_model_from_obj(const char *file_path);
 Model load_model_from_obj_into_memory(const char *file_path);
 
 /* gltf */
+Model load_model_from_gltf(const char *file_path);
 Model load_model_from_gltf_into_memory(const char *file_path);
 
 Creese_Image create_image(const char *file_path);
 Rvk_Texture create_texture(Creese_Image img);
 
+typedef enum {
+    SHAPE_3D_CUBE,
+    SHAPE_3D_TETRAHEDRON,
+    SHAPE_3D_QUAD,
+    SHAPE_3D_TRIANGLE,
+    SHAPE_3D_COUNT,
+} Shape_3D;
+
+void draw_fps();
+void draw_shape_3D(Shape_3D shape);
 void load_model_gpu(Model *model);
 void destroy_model(Model model);
 void draw_model(Model model);
 void draw_mesh(Mesh mesh);
+void draw_default_cube();
 
 Rvk_Buffer create_compute_buffer(size_t size, void *data);
 Rvk_Buffer create_vertex_buffer(size_t size, void *vertices);
