@@ -398,11 +398,39 @@ typedef struct {
 } Creese_Image;
 
 typedef struct {
-    struct {         Mesh *items; size_t count; size_t capacity; } meshes;
-    struct {  Rvk_Texture *items; size_t count; size_t capacity; } textures;
+    Vector3 translation;
+    Quaternion rotation;
+    Vector3 scale;
+} Transform;
+
+typedef struct {
+    char name[32];
+    int parent;
+} Bone_Info;
+
+typedef struct {
+    struct { Bone_Info  *items; size_t count; size_t capacity; } bones;
+    Transform base_transform;
+} Model_Skeleton;
+
+typedef struct {
+    struct { Mesh         *items; size_t count; size_t capacity; } meshes;
+    struct { Rvk_Texture  *items; size_t count; size_t capacity; } textures;
     struct { Creese_Image *items; size_t count; size_t capacity; } images;
     struct { Rvk_Texture texture; Rvk_Buffer buffer; Creese_Image image; uint32_t data; } phony;
+
+    Model_Skeleton skeleton;
+    Transform current_transform;
+    Matrix *bone_matrices;
 } Model;
+
+typedef struct {
+    char name[32];
+    size_t bone_count;
+    struct { Transform **items; size_t count; size_t capacity; } key_frames;
+} Model_Animation;
+
+typedef struct { Model_Animation *items; size_t count; size_t capacity; } Model_Animations;
 
 /* obj */
 Model load_model_from_obj(const char *file_path);
@@ -411,6 +439,7 @@ Model load_model_from_obj_into_memory(const char *file_path);
 /* gltf */
 Model load_model_from_gltf(const char *file_path);
 Model load_model_from_gltf_into_memory(const char *file_path);
+Model_Animations load_model_animations_from_gltf(const char *file_path);
 
 Creese_Image create_image(const char *file_path);
 Rvk_Texture create_texture(Creese_Image img);

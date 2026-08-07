@@ -146,7 +146,6 @@ void populate_attributes(Mesh *mesh, cgltf_attribute attribute)
 
 Model load_model_from_gltf_into_memory(const char *file_path)
 {
-
     Model model = {0};
     String_Builder sb = {0};
     if (!read_entire_file(file_path, &sb)) return model;
@@ -270,4 +269,33 @@ Model load_model_from_gltf(const char *file_path)
     Model model = load_model_from_gltf_into_memory(file_path);
     load_model_gpu(&model);
     return model;
+}
+
+Model_Animations load_model_animations_from_gltf(const char *file_path)
+{
+    Model_Animations model_animations = {0};
+    String_Builder sb = {0};
+    if (!read_entire_file(file_path, &sb)) return model_animations;
+
+    cgltf_data *data = NULL;
+    cgltf_options options = {0};
+    cgltf_result res = cgltf_parse(&options, sb.items, sb.count, &data);
+    if (res != cgltf_result_success) {
+        printf("gltf error %s, for file %s\n", cgltf_res_to_str(res), file_path);
+        return model_animations;
+    }
+
+    res = cgltf_load_buffers(&options, data, file_path);
+    if (res != cgltf_result_success) {
+        printf("gltf error %s, while loading buffers\n", cgltf_res_to_str(res));
+        return model_animations;
+    }
+
+    if (data->skins_count > 0) {
+        cgltf_skin skin = data->skins[0];
+    }
+
+    sb_free(sb);
+
+    return model_animations;
 }
