@@ -8,6 +8,7 @@ int main()
     init_window(500, 500, "gltf animation");
     Model robot = load_model_from_gltf(GLTF_MODEL);
 
+
     Camera camera = {
         .position = {0.0f, 7.0f, 10.0f},
         .target   = {0.0f, 3.0f, 0.0f},
@@ -20,7 +21,7 @@ int main()
             begin_mode_3D(camera); {
                 rotate_y(get_time());
                 draw_model(robot);
-                // draw_shape_3D(SHAPE_3D_CUBE);
+//                draw_shape_3D(SHAPE_3D_CUBE);
             } end_mode_3D();
 
             draw_fps();

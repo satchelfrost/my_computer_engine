@@ -1,16 +1,6 @@
 #ifndef MY_COMPUTER_H_
 #define MY_COMPUTER_H_
 
-// TODO: organize this file
-
-// TODO: bring some of the ideas from creese 2D such as module structure
-// TODO: separate into some behavior into platform_desktop
-// TODO: precompile some of the external modules
-// TODO: make the log level a little more dynamic for rvk
-// TODO: configurable z_near/z_far and ttf bitmap defaults
-// TODO: vulkan context should be at least vk_ctx instead of ctx
-// TODO: resizeable swapchain
-
 #include <stdbool.h>
 #include "rvk.h"
 
@@ -220,7 +210,6 @@ typedef enum {
     GAMEPAD_AXIS_RIGHT_TRIGGER = 5
 } Gamepad_Axis;
 
-// TODO: will need to separate this when we switch platforms
 typedef struct {
     uint32_t width, height;
     GLFWwindow *window;

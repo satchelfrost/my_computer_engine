@@ -32,6 +32,84 @@ const char *examples[] = {
     "example_gltf_animation",
 };
 
+struct {
+    const char *name;
+    const char *impl_define;
+    const char *api_define;
+    const char *include_dir;
+} hdr_modules[] = {
+    {
+        .name = "stb_image",
+        .impl_define = "-DSTB_IMAGE_IMPLEMENTATION",
+        .include_dir = EXTERNAL,
+    },
+    {
+        .name = "stb_truetype",
+        .impl_define = "-DSTB_TRUETYPE_IMPLEMENTATION",
+        .include_dir = EXTERNAL,
+    },
+    {
+        .name = "cgltf",
+        .impl_define = "-DCGLTF_IMPLEMENTATION",
+        .include_dir = EXTERNAL,
+    },
+    {
+        .name = "raymath",
+        .impl_define = "-DRAYMATH_IMPLEMENTATION",
+        .include_dir = EXTERNAL,
+    },
+    {
+        .name = "tinyobj_loader_c",
+        .impl_define = "-DTINYOBJ_LOADER_C_IMPLEMENTATION",
+        .include_dir = EXTERNAL,
+    },
+    {
+        .name = "rvk",
+        .impl_define = "-DRVK_IMPLEMENTATION",
+        .include_dir = EXTERNAL,
+    },
+// TODO: not using these yet, but I will once I add in the audio library from creese_2D
+//    {
+//        .name = "miniaudio",
+//        .impl_define = "-DMINIAUDIO_IMPLEMENTATION",
+//        .include_dir = EXTERNAL,
+//    },
+//    {
+//        .name = "dr_wav",
+//        .impl_define = "-DDR_WAV_IMPLEMENTATION",
+//        .include_dir = EXTERNAL,
+//    },
+    {
+        .name = "nob",
+        .impl_define = "-DNOB_IMPLEMENTATION",
+        .include_dir = "./",
+    },
+};
+
+bool build_header_only_libraries(Cmd *cmd, const char *target, bool force)
+{
+    for (size_t i = 0; i < ARRAY_LEN(hdr_modules); i++) {
+        const char *hdr = temp_sprintf("%s%s.h", hdr_modules[i].include_dir, hdr_modules[i].name);
+        const char *obj = temp_sprintf("%s%s.o", (target == "linux") ? LINUX : WINDOWS, hdr_modules[i].name);
+        int res = needs_rebuild1(obj, hdr);
+        if (res < 0) {
+            nob_log(ERROR, "needs rebuild failed: header %s, obj %s\n", hdr, obj);
+            return false;
+        } else if (!res && !force) {
+            continue; // no rebuild necessary
+        } else {
+            /* build compiler command */
+            cmd_append(cmd, (target == "linux") ? "gcc" : "x86_64-w64-mingw32-gcc");
+            cmd_append(cmd, hdr_modules[i].impl_define);
+            if (hdr_modules[i].api_define) cmd_append(cmd, hdr_modules[i].api_define);
+            cmd_append(cmd, "-x", "c", hdr);
+            cmd_append(cmd, "-c", "-o", obj);
+            if (!cmd_run(cmd)) return false;
+        }
+    }
+    return true;
+}
+
 bool compile_shaders(Cmd *cmd)
 {
     for (size_t i = 0; i < ARRAY_LEN(shaders); i++) {
@@ -116,6 +194,10 @@ bool build_example(Cmd *cmd, bool force, const char *target, const char *example
     cmd_append(cmd, "-I./"SRC);
     cmd_append(cmd, "-o", e);
     cmd_append(cmd, c, glfw, my_computer);
+    for (size_t i = 0; i < ARRAY_LEN(hdr_modules); i++) {
+        const char *obj = temp_sprintf("%s%s.o", (target == "linux") ? LINUX : WINDOWS, hdr_modules[i].name);
+        cmd_append(cmd, obj);
+    }
     if (target == "linux") cmd_append(cmd, "-lm", "-lvulkan");
     else                   cmd_append(cmd, "-L./"EXTERNAL, "-l:vulkan-1.lib", "-lgdi32");
     return cmd_run(cmd);
@@ -130,7 +212,7 @@ void log_usage(const char *program)
     printf("    --target, build target (e.g. windows and linux)\n");
     printf("    --run <example number> <args>, run after building (only for linux)\n");
     printf("    --renderdoc <example number> <args>, (only for linux) expects renderdoc/renderdoccmd in path (https://renderdoc.org/builds)\n");
-    printf("    --debug <example number> <args>, (only for linux) expects renderdoc/renderdoccmd in path (https://renderdoc.org/builds)\n");
+    printf("    --debug <example number> <args>, (only for linux) expects gf2 in path (https://github.com/nakst/gf)\n");
 }
 
 typedef struct {
@@ -308,6 +390,7 @@ int main(int argc, char **argv)
 
     Cmd cmd = {0};
 
+    if (!build_header_only_libraries(&cmd, config.target, config.clean)) return 1;
     if (!build_glfw(&cmd, config.target)) return 1;
     if (!build_my_computer(&cmd, config.clean, config.target)) return 1;
     for (size_t i = 0; i < ARRAY_LEN(examples); i++)

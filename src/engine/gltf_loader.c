@@ -1,4 +1,3 @@
-#define CGLTF_IMPLEMENTATION
 #include "../external/cgltf.h"
 
 const char *cgltf_res_to_str(cgltf_result res)
@@ -293,6 +292,7 @@ Model_Animations load_model_animations_from_gltf(const char *file_path)
 
     if (data->skins_count > 0) {
         cgltf_skin skin = data->skins[0];
+        (void)skin;
     }
 
     sb_free(sb);

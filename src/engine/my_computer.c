@@ -1,26 +1,12 @@
 #include "../my_computer.h"
 
-#define RVK_LOG_LEVEL RVK_INFO
-#define RVK_IMPLEMENTATION
-#include "../external/rvk.h"
-
-#define NOB_STRIP_PREFIX
-#define NOB_IMPLEMENTATION
-#include "../../nob.h"
-
 #ifdef VULKAN_VALIDATION_ON
     #define VK_VALIDATION 1
 #else
     #define VK_VALIDATION 0
 #endif
 
-#define RAYMATH_IMPLEMENTATION
-#include "../external/raymath.h"
-
-#define STB_TRUETYPE_IMPLEMENTATION
 #include "../external/stb_truetype.h"
-
-#define STB_IMAGE_IMPLEMENTATION
 #include "../external/stb_image.h"
 
 /* engine modules (note: must update nob.c) */
@@ -44,7 +30,9 @@
 
 #define FPS_CAPTURE_FRAMES_COUNT 30
 
-#define DEFAULT_FONT_SIZE 42
+#ifndef DEFAULT_FONT_SIZE
+    #define DEFAULT_FONT_SIZE 42
+#endif
 
 #define IMAGE_WORKGROUP_SIZE 16.0f
 #define POINT_WORKGROUP_SIZE 1024.0f
@@ -68,8 +56,8 @@ static struct {
     size_t capacity;
 } device_exts = {0};
 
-static Vulkan_Context ctx = {0}; // TODO: to vk_ctx
-static Frame_Context frm_ctx = {0};
+static Vulkan_Context vk_ctx = {0};
+static Frame_Context frame_ctx = {0};
 
 #define MAX_MAT_STACK 1024 * 1024
 static Matrix mat_stack[MAX_MAT_STACK];
@@ -201,9 +189,9 @@ bool init_window(int width, int height, char *title)
 
     VkApplicationInfo app_info = {
         .sType = VK_STRUCTURE_TYPE_APPLICATION_INFO,
-        .pApplicationName = APP_NAME,
+        .pApplicationName = "my computer",
         .applicationVersion = VK_MAKE_VERSION(0, 0, 1),
-        .pEngineName = "Potentia v0",
+        .pEngineName = "my computer engine",
         .engineVersion = VK_MAKE_VERSION(0, 0, 1),
         .apiVersion = VK_API_VERSION_1_3,
     };
@@ -218,7 +206,7 @@ bool init_window(int width, int height, char *title)
     for (uint32_t i = 0; i < req_ext_count; i++) da_append(&instance_exts, req_inst_exts[i]);
 
     /* create vulkan instance (w/ or w/o validation layers i.e. VK_VALIDATION = 1/0) */
-    if (!vk_create_instance(NULL, &ctx.instance,
+    if (!vk_create_instance(NULL, &vk_ctx.instance,
                             .pNext = (VK_VALIDATION) ? &debug_messenger_ci : NULL,
                             .ppEnabledLayerNames = layers.items,
                             .enabledLayerCount = layers.count,
@@ -227,7 +215,7 @@ bool init_window(int width, int height, char *title)
                             .pApplicationInfo = &app_info)) return false;
 
     /* create the vulkan surface */
-    if (!RVK(glfwCreateWindowSurface(ctx.instance, window.window, NULL, &ctx.surface))) return false;
+    if (!RVK(glfwCreateWindowSurface(vk_ctx.instance, window.window, NULL, &vk_ctx.surface))) return false;
 
     da_append(&device_exts, "VK_KHR_swapchain");
     Rvk_Device_Config device_config = {
@@ -236,14 +224,14 @@ bool init_window(int width, int height, char *title)
         .layer_count = layers.count,
         .layers = layers.items,
     };
-    ctx.device = r_create_rvk_device(ctx.instance, ctx.surface, device_config);
-    if (!ctx.device.logical) return false;
+    vk_ctx.device = r_create_rvk_device(vk_ctx.instance, vk_ctx.surface, device_config);
+    if (!vk_ctx.device.logical) return false;
 
     /* create swapchain */
-    ctx.swapchain = r_create_rvk_swapchain(ctx.device, ctx.surface, width, height);
-    if (!ctx.swapchain.handle) return false;
+    vk_ctx.swapchain = r_create_rvk_swapchain(vk_ctx.device, vk_ctx.surface, width, height);
+    if (!vk_ctx.swapchain.handle) return false;
 
-    ctx.pool = r_create_default_descriptor_pool(ctx.device.logical);
+    vk_ctx.pool = r_create_default_descriptor_pool(vk_ctx.device.logical);
 
     init_standard_rendering();
 
@@ -252,7 +240,7 @@ bool init_window(int width, int height, char *title)
 
 void close_window()
 {
-    vkQueueWaitIdle(ctx.device.queue);
+    vkQueueWaitIdle(vk_ctx.device.queue);
 
     unload_font(standard.text.default_font);
     destroy_texture(standard.text.bitmap);
@@ -264,14 +252,14 @@ void close_window()
     destroy_model(standard.shapes_3D);
 
     for (size_t i = 0; i < DS_LAYOUT_COUNT; i++)
-        vkDestroyDescriptorSetLayout(ctx.device.logical, standard.ds_layouts[i], NULL);
+        vkDestroyDescriptorSetLayout(vk_ctx.device.logical, standard.ds_layouts[i], NULL);
 
-    vkDestroyDescriptorPool(ctx.device.logical, ctx.pool, NULL);
+    vkDestroyDescriptorPool(vk_ctx.device.logical, vk_ctx.pool, NULL);
 
-    r_destroy_rvk_swapchain(ctx.device.logical, ctx.swapchain);
-    r_destroy_rvk_device(ctx.device);
-    vkDestroySurfaceKHR(ctx.instance, ctx.surface, NULL);
-    vkDestroyInstance(ctx.instance, NULL);
+    r_destroy_rvk_swapchain(vk_ctx.device.logical, vk_ctx.swapchain);
+    r_destroy_rvk_device(vk_ctx.device);
+    vkDestroySurfaceKHR(vk_ctx.instance, vk_ctx.surface, NULL);
+    vkDestroyInstance(vk_ctx.instance, NULL);
 }
 
 bool window_should_close()
@@ -294,10 +282,10 @@ Window get_window()
 void begin_drawing(Color color)
 {
     begin_timer();
-    r_wait_reset_fence(ctx.device.logical, &ctx.device.fences[0]);
-    r_acquire_next_image(ctx.device.logical, ctx.swapchain.handle,
-                         ctx.device.image_available_sems[0], &frm_ctx.img_idx);
-    r_reset_begin_cmd_buff(ctx.device.cmd_buffs[0]);
+    r_wait_reset_fence(vk_ctx.device.logical, &vk_ctx.device.fences[0]);
+    r_acquire_next_image(vk_ctx.device.logical, vk_ctx.swapchain.handle,
+                         vk_ctx.device.image_available_sems[0], &frame_ctx.img_idx);
+    r_reset_begin_cmd_buff(vk_ctx.device.cmd_buffs[0]);
 
     if (!standard.options.disable_render_pass)
         begin_render_pass(color);
@@ -309,9 +297,9 @@ void end_drawing()
         end_render_pass();
 
     /* submit the command buffer and present when ready */
-    RVK(vkEndCommandBuffer(ctx.device.cmd_buffs[0]));
-    r_submit(ctx.device, 0);
-    r_present(ctx.device.queue, ctx.device.render_finished_sems[0], frm_ctx.img_idx, ctx.swapchain.handle);
+    RVK(vkEndCommandBuffer(vk_ctx.device.cmd_buffs[0]));
+    r_submit(vk_ctx.device, 0);
+    r_present(vk_ctx.device.queue, vk_ctx.device.render_finished_sems[0], frame_ctx.img_idx, vk_ctx.swapchain.handle);
 
     end_timer();
     poll_input_events();
@@ -346,34 +334,34 @@ static void wait_time(double seconds)
 
 void begin_timer()
 {
-    frm_ctx.time.curr   = get_time();
-    frm_ctx.time.prev   = (frm_ctx.time.prev == 0) ? frm_ctx.time.curr : frm_ctx.time.prev; // avoid huge time diff on first frame
-    frm_ctx.time.update = frm_ctx.time.curr - frm_ctx.time.prev;
-    frm_ctx.time.prev   = frm_ctx.time.curr;
+    frame_ctx.time.curr   = get_time();
+    frame_ctx.time.prev   = (frame_ctx.time.prev == 0) ? frame_ctx.time.curr : frame_ctx.time.prev; // avoid huge time diff on first frame
+    frame_ctx.time.update = frame_ctx.time.curr - frame_ctx.time.prev;
+    frame_ctx.time.prev   = frame_ctx.time.curr;
 }
 
 void end_timer()
 {
-    frm_ctx.time.curr = get_time();
-    frm_ctx.time.draw = frm_ctx.time.curr - frm_ctx.time.prev;
-    frm_ctx.time.prev = frm_ctx.time.curr;
-    frm_ctx.time.frame = frm_ctx.time.update + frm_ctx.time.draw;
+    frame_ctx.time.curr = get_time();
+    frame_ctx.time.draw = frame_ctx.time.curr - frame_ctx.time.prev;
+    frame_ctx.time.prev = frame_ctx.time.curr;
+    frame_ctx.time.frame = frame_ctx.time.update + frame_ctx.time.draw;
 
-    if (frm_ctx.time.frame < frm_ctx.time.target) {
-        wait_time(frm_ctx.time.target - frm_ctx.time.frame);
+    if (frame_ctx.time.frame < frame_ctx.time.target) {
+        wait_time(frame_ctx.time.target - frame_ctx.time.frame);
 
-        frm_ctx.time.curr = get_time();
-        double wait = frm_ctx.time.curr - frm_ctx.time.prev;
-        frm_ctx.time.prev = frm_ctx.time.curr;
-        frm_ctx.time.frame += wait;
+        frame_ctx.time.curr = get_time();
+        double wait = frame_ctx.time.curr - frame_ctx.time.prev;
+        frame_ctx.time.prev = frame_ctx.time.curr;
+        frame_ctx.time.frame += wait;
     }
 
-    frm_ctx.time.frame_count++;
+    frame_ctx.time.frame_count++;
 }
 
 double get_frame_time()
 {
-    return frm_ctx.time.frame;
+    return frame_ctx.time.frame;
 }
 
 double get_time()
@@ -383,12 +371,12 @@ double get_time()
 
 Vulkan_Context get_vulkan_context()
 {
-    return ctx;
+    return vk_ctx;
 }
 
 Matrix calc_projection(Camera camera)
 {
-    double aspect = ctx.swapchain.extent.width / (double)ctx.swapchain.extent.height;
+    double aspect = vk_ctx.swapchain.extent.width / (double)vk_ctx.swapchain.extent.height;
     return MatrixPerspectiveVk(camera.fovy * DEG2RAD, aspect, Z_NEAR, Z_FAR);
 }
 
@@ -463,22 +451,22 @@ Matrix get_mvp()
 
 VkCommandBuffer get_current_cmd_buff()
 {
-    return ctx.device.cmd_buffs[0];
+    return vk_ctx.device.cmd_buffs[0];
 }
 
 VkCommandBuffer get_command_buffer()
 {
-    return ctx.device.cmd_buffs[0];
+    return vk_ctx.device.cmd_buffs[0];
 }
 
 void set_viewport_scissor()
 {
-    r_cmd_set_viewport_scissor(ctx.device.cmd_buffs[0], ctx.swapchain.extent);
+    r_cmd_set_viewport_scissor(vk_ctx.device.cmd_buffs[0], vk_ctx.swapchain.extent);
 }
 
 void wait_idle()
 {
-    vkQueueWaitIdle(ctx.device.queue);
+    vkQueueWaitIdle(vk_ctx.device.queue);
 }
 
 Vector3 get_camera_forward(Camera *camera)
@@ -647,22 +635,22 @@ void update_camera_free(Camera *camera)
     /* gamepad movement */
     float joy_x = get_gamepad_axis_movement(GAMEPAD_AXIS_RIGHT_X);
     float joy_y = get_gamepad_axis_movement(GAMEPAD_AXIS_RIGHT_Y);
-    float joy_x_norm = (fabsf(joy_x) - DEAD_ZONE) / (1.0f - DEAD_ZONE);
-    float joy_y_norm = (fabsf(joy_y) - DEAD_ZONE) / (1.0f - DEAD_ZONE);
-    if (joy_x >  DEAD_ZONE) camera_yaw(camera,  -joy_x_norm * dt * GAMEPAD_ROT_SENSITIVITY);
-    if (joy_y >  DEAD_ZONE) camera_pitch(camera,-joy_y_norm * dt * GAMEPAD_ROT_SENSITIVITY);
-    if (joy_x < -DEAD_ZONE) camera_yaw(camera,   joy_x_norm * dt * GAMEPAD_ROT_SENSITIVITY);
-    if (joy_y < -DEAD_ZONE) camera_pitch(camera, joy_y_norm * dt * GAMEPAD_ROT_SENSITIVITY);
+    float joy_x_norm = (fabsf(joy_x) - DEAD_ZONE)/(1.0f - DEAD_ZONE);
+    float joy_y_norm = (fabsf(joy_y) - DEAD_ZONE)/(1.0f - DEAD_ZONE);
+    if (joy_x >  DEAD_ZONE) camera_yaw(camera,  -joy_x_norm*dt*GAMEPAD_ROT_SENSITIVITY);
+    if (joy_y >  DEAD_ZONE) camera_pitch(camera,-joy_y_norm*dt*GAMEPAD_ROT_SENSITIVITY);
+    if (joy_x < -DEAD_ZONE) camera_yaw(camera,   joy_x_norm*dt*GAMEPAD_ROT_SENSITIVITY);
+    if (joy_y < -DEAD_ZONE) camera_pitch(camera, joy_y_norm*dt*GAMEPAD_ROT_SENSITIVITY);
     float fb = get_gamepad_axis_movement(GAMEPAD_AXIS_LEFT_Y);
     float lr = get_gamepad_axis_movement(GAMEPAD_AXIS_LEFT_X);
-    float fb_norm = (fabsf(fb) - DEAD_ZONE) / (1.0f - DEAD_ZONE);
-    float lr_norm = (fabsf(lr) - DEAD_ZONE) / (1.0f - DEAD_ZONE);
-    if (fb <= -DEAD_ZONE) camera_move_forward(camera,  move_speed * fb_norm);
-    if (lr <= -DEAD_ZONE) camera_move_right(camera,   -move_speed * lr_norm);
-    if (fb >=  DEAD_ZONE) camera_move_forward(camera, -move_speed * fb_norm);
-    if (lr >=  DEAD_ZONE) camera_move_right(camera,    move_speed * lr_norm);
-    if (is_gamepad_button_down(GAMEPAD_BUTTON_RIGHT_TRIGGER_2)) camera_move_up(camera, move_speed / 2.0f);
-    if (is_gamepad_button_down(GAMEPAD_BUTTON_LEFT_TRIGGER_2))  camera_move_up(camera, -move_speed / 2.0f);
+    float fb_norm = (fabsf(fb) - DEAD_ZONE)/(1.0f - DEAD_ZONE);
+    float lr_norm = (fabsf(lr) - DEAD_ZONE)/(1.0f - DEAD_ZONE);
+    if (fb <= -DEAD_ZONE) camera_move_forward(camera,  move_speed*fb_norm);
+    if (lr <= -DEAD_ZONE) camera_move_right(camera,   -move_speed*lr_norm);
+    if (fb >=  DEAD_ZONE) camera_move_forward(camera, -move_speed*fb_norm);
+    if (lr >=  DEAD_ZONE) camera_move_right(camera,    move_speed*lr_norm);
+    if (is_gamepad_button_down(GAMEPAD_BUTTON_RIGHT_TRIGGER_2)) camera_move_up(camera, move_speed/2.0f);
+    if (is_gamepad_button_down(GAMEPAD_BUTTON_LEFT_TRIGGER_2))  camera_move_up(camera, -move_speed/2.0f);
 
     /* keyboard movement */
     if (is_key_down(KEY_LEFT_SHIFT)) move_speed *= 10.0f;
@@ -675,7 +663,7 @@ void update_camera_free(Camera *camera)
     if (is_key_down(KEY_LEFT))  camera_roll(camera, -CAMERA_ROT_SENSITIVITY * dt);
     if (is_key_down(KEY_RIGHT)) camera_roll(camera,  CAMERA_ROT_SENSITIVITY * dt);
 
-    // TODO: There should be an if check here
+    // TODO: There should be a threshold check here
     // camera_move_to_target(camera, -get_mouse_wheel_move());
 }
 
@@ -844,7 +832,7 @@ int get_avg_fps()
     static double average = 0, last = 0;
     double fps_frame = get_frame_time();
 
-    if (frm_ctx.time.frame_count == 0) {
+    if (frame_ctx.time.frame_count == 0) {
         average = 0;
         last = 0;
         index = 0;
@@ -875,7 +863,7 @@ float get_avg_frame_time()
     static double average = 0, last = 0;
     double fps_frame = get_frame_time();
 
-    if (frm_ctx.time.frame_count == 0) {
+    if (frame_ctx.time.frame_count == 0) {
         average = 0;
         last = 0;
         index = 0;
@@ -907,14 +895,14 @@ void log_fps()
     }
 }
 
-Frame_Context get_frame_context()
+Frame_Context get_frame_ctx()
 {
-    return frm_ctx;
+    return frame_ctx;
 }
 
 VkFramebuffer get_current_frame_buffer()
 {
-    return ctx.swapchain.framebuffers[frm_ctx.img_idx];
+    return vk_ctx.swapchain.framebuffers[frame_ctx.img_idx];
 }
 
 Font load_font(const char *file_path, int font_height)
@@ -967,13 +955,13 @@ struct {
 void create_text_pipeline()
 {
     VkPipelineLayout layout = VK_NULL_HANDLE;
-    Vulkan_Context ctx = get_vulkan_context();
+    Vulkan_Context vk_ctx = get_vulkan_context();
     VkPushConstantRange pc_range = {
         .stageFlags = VK_SHADER_STAGE_VERTEX_BIT|VK_SHADER_STAGE_FRAGMENT_BIT,
         .size = sizeof(text_push_const)
     };
 
-    vk_create_pipeline_layout(ctx.device.logical, NULL, &layout,
+    vk_create_pipeline_layout(vk_ctx.device.logical, NULL, &layout,
                               .pushConstantRangeCount = 1,
                               .pPushConstantRanges = &pc_range,
                               .setLayoutCount = 1,
@@ -1022,13 +1010,13 @@ void draw_text_at_base_ex(Font font, const char *text, size_t text_len, int x, i
 
         /* allocate and update descriptor sets for text bitmap */
         assert(standard.ds_layouts[DS_LAYOUT_TEXT]);
-        if (!vk_allocate_descriptor_sets(ctx.device.logical, &standard.text.ds,
-                                         .descriptorPool = ctx.pool,
+        if (!vk_allocate_descriptor_sets(vk_ctx.device.logical, &standard.text.ds,
+                                         .descriptorPool = vk_ctx.pool,
                                          .descriptorSetCount = 1,
                                          .pSetLayouts = &standard.ds_layouts[DS_LAYOUT_TEXT])) return;
 
         VkExtent2D extent = {.width = font.bitmap_width, .height = font.bitmap_height};
-        standard.text.bitmap = r_create_texture(ctx.device, extent, font.bitmap, VK_FORMAT_R8_UNORM);
+        standard.text.bitmap = r_create_texture(vk_ctx.device, extent, font.bitmap, VK_FORMAT_R8_UNORM);
         assert(standard.text.ds);
         VkWriteDescriptorSet write = {
             .sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
@@ -1038,14 +1026,14 @@ void draw_text_at_base_ex(Font font, const char *text, size_t text_len, int x, i
             .dstSet = standard.text.ds,
             .pImageInfo = &standard.text.bitmap.info,
         };
-        vkUpdateDescriptorSets(ctx.device.logical, 1, &write, 0, NULL);
+        vkUpdateDescriptorSets(vk_ctx.device.logical, 1, &write, 0, NULL);
     }
 
-    VkCommandBuffer cb = ctx.device.cmd_buffs[0];
+    VkCommandBuffer cb = vk_ctx.device.cmd_buffs[0];
     vkCmdBindPipeline(cb, 0, standard.text.pl.handle);
     vkCmdBindDescriptorSets(cb, VK_PIPELINE_BIND_POINT_GRAPHICS, standard.text.pl.layout,
                             0, 1, &standard.text.ds, 0, NULL);
-    r_cmd_set_viewport_scissor(cb, ctx.swapchain.extent);
+    r_cmd_set_viewport_scissor(cb, vk_ctx.swapchain.extent);
 
     int x_advance = 0;
     for (size_t c = 0; c < text_len; c++) {
@@ -1116,20 +1104,20 @@ VkPipelineShaderStageCreateInfo load_compute_shader(const char *file_path, Strin
 
     sb->count = 0;
     if (read_entire_file(file_path, sb))
-        ci = r_create_compute_shader_stage_ci(ctx.device.logical, sb->count, (uint32_t*)sb->items);
+        ci = r_create_compute_shader_stage_ci(vk_ctx.device.logical, sb->count, (uint32_t*)sb->items);
 
     return ci;
 }
 
 void unload_shader(VkPipelineShaderStageCreateInfo ci)
 {
-    vkDestroyShaderModule(ctx.device.logical, ci.module, NULL);
+    vkDestroyShaderModule(vk_ctx.device.logical, ci.module, NULL);
 }
 
 void destroy_pipeline(Rvk_Pipeline pipeline)
 {
-    vkDestroyPipeline(ctx.device.logical, pipeline.handle, NULL);
-    vkDestroyPipelineLayout(ctx.device.logical, pipeline.layout, NULL);
+    vkDestroyPipeline(vk_ctx.device.logical, pipeline.handle, NULL);
+    vkDestroyPipelineLayout(vk_ctx.device.logical, pipeline.layout, NULL);
 }
 
 void setup_required_standard_ds_layouts()
@@ -1197,7 +1185,7 @@ void setup_required_standard_ds_layouts()
             .stageFlags      = VK_SHADER_STAGE_FRAGMENT_BIT,
         },
     };
-    vk_create_descriptor_set_layout(ctx.device.logical, NULL, &standard.ds_layouts[DS_LAYOUT_TRIANGLE_RENDER],
+    vk_create_descriptor_set_layout(vk_ctx.device.logical, NULL, &standard.ds_layouts[DS_LAYOUT_TRIANGLE_RENDER],
                                     .pBindings = tri_bindings,
                                     .bindingCount = ARRAY_LEN(tri_bindings));
 
@@ -1210,7 +1198,7 @@ void setup_required_standard_ds_layouts()
             .stageFlags      = VK_SHADER_STAGE_FRAGMENT_BIT,
         }
     };
-    vk_create_descriptor_set_layout(ctx.device.logical, NULL, &standard.ds_layouts[DS_LAYOUT_TEXT],
+    vk_create_descriptor_set_layout(vk_ctx.device.logical, NULL, &standard.ds_layouts[DS_LAYOUT_TEXT],
                                     .pBindings = text_bindings,
                                     .bindingCount = ARRAY_LEN(text_bindings));
 
@@ -1219,32 +1207,32 @@ void setup_required_standard_ds_layouts()
 void init_standard_rendering()
 {
     setup_required_standard_ds_layouts();
-    standard.uniform_buff = r_create_mapped_uniform_buffer(ctx.device, sizeof(standard.uniform_data));
+    standard.uniform_buff = r_create_mapped_uniform_buffer(vk_ctx.device, sizeof(standard.uniform_data));
 }
 
 Rvk_Buffer create_compute_buffer(size_t size, void *data)
 {
-    return r_create_compute_buffer_from_host(ctx.device, size, data);
+    return r_create_compute_buffer_from_host(vk_ctx.device, size, data);
 }
 
 void destroy_buffer(Rvk_Buffer buff)
 {
-    r_destroy_rvk_buffer(ctx.device.logical, buff);
+    r_destroy_rvk_buffer(vk_ctx.device.logical, buff);
 }
 
 void destroy_texture(Rvk_Texture texture)
 {
-    r_destroy_texture(ctx.device.logical, texture);
+    r_destroy_texture(vk_ctx.device.logical, texture);
 }
 
 Rvk_Buffer create_vertex_buffer(size_t size, void *vertices)
 {
-    return r_create_vertex_buffer(ctx.device, size, vertices);
+    return r_create_vertex_buffer(vk_ctx.device, size, vertices);
 }
 
 Rvk_Buffer create_index_buffer(size_t size, void *indices)
 {
-    return r_create_index_buffer(ctx.device, size, indices);
+    return r_create_index_buffer(vk_ctx.device, size, indices);
 }
 
 Rvk_Pipeline create_triangle_rvk_pipeline(const char *vert_shader, const char *frag_shader, VkPipelineLayout layout, VkPipelineVertexInputStateCreateInfo vert_input)
@@ -1255,33 +1243,33 @@ Rvk_Pipeline create_triangle_rvk_pipeline(const char *vert_shader, const char *f
 
     /* load shaders */
     read_entire_file(vert_shader, &sb);
-    stages[0] = r_create_vertex_stage_ci(ctx.device.logical, sb.count, (uint32_t*)sb.items);
+    stages[0] = r_create_vertex_stage_ci(vk_ctx.device.logical, sb.count, (uint32_t*)sb.items);
     assert(stages[0].module);
     sb.count = 0; // reuse memory
     read_entire_file(frag_shader, &sb);
-    stages[1] = r_create_fragment_stage_ci(ctx.device.logical, sb.count, (uint32_t*)sb.items);
+    stages[1] = r_create_fragment_stage_ci(vk_ctx.device.logical, sb.count, (uint32_t*)sb.items);
     assert(stages[1].module);
     sb.count = 0;
 
     /* temporary allocator */
     size_t temp_alloc_save_point = r_temp_save();
-    vk_create_graphics_pipeline(ctx.device.logical, NULL, NULL, &pl.handle,
+    vk_create_graphics_pipeline(vk_ctx.device.logical, NULL, NULL, &pl.handle,
                                 .stageCount = ARRAY_LEN(stages),
                                 .pStages = stages,
                                 .pVertexInputState = &vert_input,
                                 .pInputAssemblyState = r_temp_default_input_assembly_state_ci(),
-                                .pViewportState = r_temp_default_viewport_state_ci(ctx.swapchain.extent),
+                                .pViewportState = r_temp_default_viewport_state_ci(vk_ctx.swapchain.extent),
                                 .pRasterizationState = r_temp_default_rasterization_state_ci(),
                                 .pMultisampleState = r_temp_default_multisample_state_ci(),
                                 .pDepthStencilState = r_temp_default_depth_stencil_state_ci(),
                                 .pColorBlendState = r_temp_default_color_blend_state_ci(),
                                 .pDynamicState = r_temp_default_dynamic_state_ci(),
                                 .layout = pl.layout,
-                                .renderPass = ctx.swapchain.render_pass);
+                                .renderPass = vk_ctx.swapchain.render_pass);
     r_temp_rewind(temp_alloc_save_point);
 
-    vkDestroyShaderModule(ctx.device.logical, stages[0].module, NULL);
-    vkDestroyShaderModule(ctx.device.logical, stages[1].module, NULL);
+    vkDestroyShaderModule(vk_ctx.device.logical, stages[0].module, NULL);
+    vkDestroyShaderModule(vk_ctx.device.logical, stages[1].module, NULL);
     sb_free(sb);
 
     return pl;
@@ -1295,11 +1283,11 @@ Rvk_Pipeline create_triangle_blend_rvk_pipeline(const char *vert_shader, const c
 
     /* load shaders */
     read_entire_file(vert_shader, &sb);
-    stages[0] = r_create_vertex_stage_ci(ctx.device.logical, sb.count, (uint32_t*)sb.items);
+    stages[0] = r_create_vertex_stage_ci(vk_ctx.device.logical, sb.count, (uint32_t*)sb.items);
     assert(stages[0].module);
     sb.count = 0; // reuse memory
     read_entire_file(frag_shader, &sb);
-    stages[1] = r_create_fragment_stage_ci(ctx.device.logical, sb.count, (uint32_t*)sb.items);
+    stages[1] = r_create_fragment_stage_ci(vk_ctx.device.logical, sb.count, (uint32_t*)sb.items);
     assert(stages[1].module);
     sb.count = 0;
 
@@ -1324,23 +1312,23 @@ Rvk_Pipeline create_triangle_blend_rvk_pipeline(const char *vert_shader, const c
 
     /* temporary allocator */
     size_t temp_alloc_save_point = r_temp_save();
-    vk_create_graphics_pipeline(ctx.device.logical, NULL, NULL, &pl.handle,
+    vk_create_graphics_pipeline(vk_ctx.device.logical, NULL, NULL, &pl.handle,
                                 .stageCount = ARRAY_LEN(stages),
                                 .pStages = stages,
                                 .pVertexInputState = &vert_input,
                                 .pInputAssemblyState = r_temp_default_input_assembly_state_ci(),
-                                .pViewportState = r_temp_default_viewport_state_ci(ctx.swapchain.extent),
+                                .pViewportState = r_temp_default_viewport_state_ci(vk_ctx.swapchain.extent),
                                 .pRasterizationState = r_temp_default_rasterization_state_ci(),
                                 .pMultisampleState = r_temp_default_multisample_state_ci(),
                                 .pDepthStencilState = r_temp_default_depth_stencil_state_ci(),
                                 .pColorBlendState = &color_blend_ci,
                                 .pDynamicState = r_temp_default_dynamic_state_ci(),
                                 .layout = pl.layout,
-                                .renderPass = ctx.swapchain.render_pass);
+                                .renderPass = vk_ctx.swapchain.render_pass);
     r_temp_rewind(temp_alloc_save_point);
 
-    vkDestroyShaderModule(ctx.device.logical, stages[0].module, NULL);
-    vkDestroyShaderModule(ctx.device.logical, stages[1].module, NULL);
+    vkDestroyShaderModule(vk_ctx.device.logical, stages[0].module, NULL);
+    vkDestroyShaderModule(vk_ctx.device.logical, stages[1].module, NULL);
     sb_free(sb);
 
     return pl;
@@ -1369,23 +1357,23 @@ void begin_render_pass(Color color)
     VkFramebuffer fb = get_current_frame_buffer();
     VkRenderPassBeginInfo begin_rp = {
         .sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO,
-        .renderPass  = ctx.swapchain.render_pass,
+        .renderPass  = vk_ctx.swapchain.render_pass,
         .framebuffer = fb,
         .renderArea.extent = extent,
         .clearValueCount = ARRAY_LEN(clear_values),
         .pClearValues = clear_values,
     };
-    vkCmdBeginRenderPass(ctx.device.cmd_buffs[0], &begin_rp, VK_SUBPASS_CONTENTS_INLINE);
+    vkCmdBeginRenderPass(vk_ctx.device.cmd_buffs[0], &begin_rp, VK_SUBPASS_CONTENTS_INLINE);
 }
 
 void end_render_pass()
 {
-    vkCmdEndRenderPass(ctx.device.cmd_buffs[0]);
+    vkCmdEndRenderPass(vk_ctx.device.cmd_buffs[0]);
 }
 
 void bind_graphics_pipeline(VkPipeline pl)
 {
-    VkCommandBuffer cmd_buff = ctx.device.cmd_buffs[0];
+    VkCommandBuffer cmd_buff = vk_ctx.device.cmd_buffs[0];
     vkCmdBindPipeline(cmd_buff, VK_PIPELINE_BIND_POINT_GRAPHICS, pl);
 }
 
@@ -1407,13 +1395,13 @@ struct {
 void init_tri_model_pipeline()
 {
     VkPipelineLayout layout = VK_NULL_HANDLE;
-    Vulkan_Context ctx = get_vulkan_context();
+    Vulkan_Context vk_ctx = get_vulkan_context();
     VkPushConstantRange pc_range = {
         .stageFlags = VK_SHADER_STAGE_VERTEX_BIT|VK_SHADER_STAGE_FRAGMENT_BIT,
         .size = sizeof(tri_render_push_const)
     };
 
-    vk_create_pipeline_layout(ctx.device.logical, NULL, &layout,
+    vk_create_pipeline_layout(vk_ctx.device.logical, NULL, &layout,
                               .pushConstantRangeCount = 1,
                               .pPushConstantRanges = &pc_range,
                               .setLayoutCount = 1,
@@ -1564,8 +1552,8 @@ void load_model_gpu(Model *model)
 
         /* allocate descriptor set */
         assert(standard.ds_layouts[DS_LAYOUT_TRIANGLE_RENDER]);
-        vk_allocate_descriptor_sets(ctx.device.logical, &mesh->gpu.ds,
-                                    .descriptorPool = ctx.pool,
+        vk_allocate_descriptor_sets(vk_ctx.device.logical, &mesh->gpu.ds,
+                                    .descriptorPool = vk_ctx.pool,
                                     .descriptorSetCount = 1,
                                     .pSetLayouts = &standard.ds_layouts[DS_LAYOUT_TRIANGLE_RENDER]);
 
@@ -1652,7 +1640,7 @@ void load_model_gpu(Model *model)
                 .pImageInfo = metallic_roughness_image_info,
             },
         };
-        vkUpdateDescriptorSets(ctx.device.logical, ARRAY_LEN(writes), writes, 0, NULL);
+        vkUpdateDescriptorSets(vk_ctx.device.logical, ARRAY_LEN(writes), writes, 0, NULL);
     }
 
 
@@ -1741,7 +1729,7 @@ Rvk_Texture create_texture(Creese_Image img)
     default:               format = VK_FORMAT_R8G8B8A8_SRGB;  break;
     }
 
-    return r_create_texture(ctx.device, extent, img.data, format);
+    return r_create_texture(vk_ctx.device, extent, img.data, format);
 }
 
 void init_standard_3D_shapes()

@@ -1,4 +1,3 @@
-#define TINYOBJ_LOADER_C_IMPLEMENTATION
 #include "../external/tinyobj_loader_c.h"
 
 typedef struct {
