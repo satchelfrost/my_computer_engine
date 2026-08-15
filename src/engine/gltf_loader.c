@@ -154,13 +154,13 @@ Model load_model_from_gltf_into_memory(const char *file_path)
     cgltf_result res = cgltf_parse(&options, sb.items, sb.count, &data);
     if (res != cgltf_result_success) {
         printf("gltf error %s, for file %s\n", cgltf_res_to_str(res), file_path);
-        return model;
+        goto end;
     }
 
     res = cgltf_load_buffers(&options, data, file_path);
     if (res != cgltf_result_success) {
         printf("gltf error %s, while loading buffers\n", cgltf_res_to_str(res));
-        return model;
+        goto end;
     }
 
     /* we need to populate the image type (SRGB for base color, UNORM for other).
@@ -249,16 +249,18 @@ Model load_model_from_gltf_into_memory(const char *file_path)
     String_View path_prefix = sv_from_parts(file_path, char_path_count);
 
     /* load images */
-    size_t checkpoint = temp_save();
-    for (size_t i = 0; i < data->images_count; i++) {
-        const char *image_path = temp_sprintf(SV_Fmt"%s", SV_Arg(path_prefix), data->images[i].uri);
-        Creese_Image image = create_image(image_path);
-        image.type = model.images.items[i].type;
-        da_append(&model.images, image);
-    }
-    temp_rewind(checkpoint);
+    size_t checkpoint = temp_save(); {
+        for (size_t i = 0; i < data->images_count; i++) {
+            const char *image_path = temp_sprintf(SV_Fmt"%s", SV_Arg(path_prefix), data->images[i].uri);
+            Creese_Image image = create_image(image_path);
+            image.type = model.images.items[i].type;
+            da_append(&model.images, image);
+        }
+    } temp_rewind(checkpoint);
 
+end:
     sb_free(sb);
+    cgltf_free(data);
 
     return model;
 }
@@ -270,32 +272,173 @@ Model load_model_from_gltf(const char *file_path)
     return model;
 }
 
+Bone_Infos load_gltf_bone_info(cgltf_skin skin)
+{
+    Bone_Infos bones = {0};
+
+    for (size_t i  = 0; i < skin.joints_count; i++) {
+        Bone_Info bone = {0};
+        cgltf_node node = *skin.joints[i];
+        if (node.name != NULL) snprintf(bone.name, sizeof(bone.name), "%s", node.name);
+
+        int parent_idx = -1;
+        cgltf_node *ancestor = node.parent;
+        while (ancestor != NULL && parent_idx == -1) {
+            for (size_t j = 0; j < skin.joints_count; j++) {
+                if (skin.joints[j] == ancestor) {
+                    parent_idx = j;
+                    break;
+                }
+            }
+            if (parent_idx == -1) ancestor = ancestor->parent;
+        }
+        bone.parent = parent_idx;
+        da_append(&bones, bone);
+    }
+
+    return bones;
+}
+
+typedef struct {
+    cgltf_animation_channel *translate;
+    cgltf_animation_channel *rotate;
+    cgltf_animation_channel *scale;
+} Channels;
+
+#define GLTF_FRAMERATE 60.0f
+
 Model_Animations load_model_animations_from_gltf(const char *file_path)
 {
-    Model_Animations model_animations = {0};
+    Model_Animations animations = {0};
     String_Builder sb = {0};
-    if (!read_entire_file(file_path, &sb)) return model_animations;
+    if (!read_entire_file(file_path, &sb)) return animations;
 
     cgltf_data *data = NULL;
     cgltf_options options = {0};
     cgltf_result res = cgltf_parse(&options, sb.items, sb.count, &data);
     if (res != cgltf_result_success) {
         printf("gltf error %s, for file %s\n", cgltf_res_to_str(res), file_path);
-        return model_animations;
+        goto end;
     }
 
     res = cgltf_load_buffers(&options, data, file_path);
     if (res != cgltf_result_success) {
         printf("gltf error %s, while loading buffers\n", cgltf_res_to_str(res));
-        return model_animations;
+        goto end;
     }
 
     if (data->skins_count > 0) {
         cgltf_skin skin = data->skins[0];
-        (void)skin;
+        size_t joint_count = skin.joints_count;
+        Matrix *ext_offset = malloc(joint_count*sizeof(Matrix));
+        for (size_t k = 0; k < joint_count; k++) {
+            ext_offset[k] = MatrixIdentity();
+            cgltf_node *n = skin.joints[k]->parent;
+            while (n) {
+                bool is_joint = false;
+                for (size_t j = 0; j < joint_count; j++) {
+                    if (skin.joints[j] == n) {
+                        is_joint = true;
+                        break;
+                    }
+                }
+
+                if (is_joint) break;
+
+                Matrix node_scale = MatrixScale(n->scale[0], n->scale[1], n->scale[2]);
+                Matrix node_rotation = QuaternionToMatrix((Quaternion){n->rotation[0], n->rotation[1], n->rotation[2], n->rotation[3]});
+                Matrix node_translation = MatrixTranslate(n->translation[0], n->translation[1], n->translation[2]);
+                Matrix node_transform = MatrixMultiply(MatrixMultiply(node_scale, node_rotation), node_translation);
+
+                ext_offset[k] = MatrixMultiply(ext_offset[k], node_transform);
+                n = n->parent;
+            }
+        }
+
+        for (size_t a = 0; a < data->animations_count; a++) {
+            Model_Animation animation = {0};
+            Bone_Infos bones = load_gltf_bone_info(skin);
+
+            cgltf_animation anim_data = data->animations[a];
+            Channels *bone_channels = calloc(bones.count, sizeof(Channels));
+            float anim_duration = 0.0f;
+            for (size_t j = 0; j < anim_data.channels_count; j++) {
+                cgltf_animation_channel channel = anim_data.channels[j];
+                int bone_idx = -1;
+                for (size_t k = 0; k < skin.joints_count; k++) {
+                    if (anim_data.channels[j].target_node == skin.joints[k]) {
+                        bone_idx = k;
+                        break;
+                    }
+                }
+
+                if (bone_idx == -1) continue;
+
+                switch (channel.target_path) {
+                case cgltf_animation_path_type_translation:
+                    bone_channels[bone_idx].translate = &anim_data.channels[j];
+                break;
+                case cgltf_animation_path_type_rotation:
+                    bone_channels[bone_idx].rotate = &anim_data.channels[j];
+                break;
+                case cgltf_animation_path_type_scale:
+                    bone_channels[bone_idx].scale = &anim_data.channels[j];
+                break;
+                case cgltf_animation_path_type_weights:
+                case cgltf_animation_path_type_invalid:
+                case cgltf_animation_path_type_max_enum:
+                default:
+                    printf("ERROR: invalid channel target path %d\n", channel.target_path);
+                    assert(0);
+                }
+
+                float time = 0.0f;
+                cgltf_bool result = cgltf_accessor_read_float(channel.sampler->input, channel.sampler->input->count - 1, &time, 1);
+                if (!result) {
+                    printf("ERROR: failed to load input time\n");
+                    continue;
+                }
+
+                anim_duration = (time > anim_duration) ? time : anim_duration;
+            }
+
+            if (anim_data.name) snprintf(animation.name, sizeof(animation.name), "%s", anim_data.name);
+
+            size_t key_frame_count = anim_duration*GLTF_FRAMERATE + 1;
+            for (size_t j = 0; j < key_frame_count; j++) {
+                Transform key_frame = {0};
+                float time = j/GLTF_FRAMERATE;
+
+                (void)time;
+                TODO("get rid^");
+
+                for (size_t k = 0; k < bones.count; k++) {
+                    Vector3 translation = {skin.joints[k]->translation[0], skin.joints[k]->translation[1], skin.joints[k]->translation[2]};
+                    Quaternion rotation = {skin.joints[k]->rotation[0], skin.joints[k]->rotation[1], skin.joints[k]->rotation[2], skin.joints[k]->rotation[3]};
+                    Vector3 scale = {skin.joints[k]->scale[0], skin.joints[k]->scale[1], skin.joints[k]->scale[2]};
+                    (void)translation;
+                    (void)rotation;
+                    (void)scale;
+
+                    TODO("where I left off");
+                    if (bone_channels[k].translate) {
+
+                    }
+
+                }
+
+
+
+                da_append(&animation.key_frames, key_frame);
+            }
+
+            da_append(&animations, animation);
+        }
     }
 
+end:
     sb_free(sb);
+    cgltf_free(data);
 
-    return model_animations;
+    return animations;
 }

@@ -397,8 +397,10 @@ typedef struct {
     int parent;
 } Bone_Info;
 
+typedef struct { Bone_Info  *items; size_t count; size_t capacity; } Bone_Infos;
+
 typedef struct {
-    struct { Bone_Info  *items; size_t count; size_t capacity; } bones;
+    Bone_Infos bones;
     Transform base_transform;
 } Model_Skeleton;
 
@@ -415,8 +417,8 @@ typedef struct {
 
 typedef struct {
     char name[32];
-    size_t bone_count;
-    struct { Transform **items; size_t count; size_t capacity; } key_frames;
+    // size_t bone_count;
+    struct { Transform *items; size_t count; size_t capacity; } key_frames;
 } Model_Animation;
 
 typedef struct { Model_Animation *items; size_t count; size_t capacity; } Model_Animations;
