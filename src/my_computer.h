@@ -321,6 +321,7 @@ void draw_text_at_base_ex(Font font, const char *text, size_t text_len, int x, i
 int measure_text(const char *text, size_t text_len);
 int measure_text_ex(Font font, const char *text, size_t text_len);
 uint32_t color_to_uint32_t(Color color);
+Color uint32_t_to_color(uint32_t rgba);
 Color color_from_hsv(float hue, float saturation, float value);
 
 typedef enum {

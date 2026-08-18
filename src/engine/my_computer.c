@@ -1067,6 +1067,20 @@ uint32_t color_to_uint32_t(Color color)
     return a<<24 | b<<16 | g<<8 | r;
 }
 
+Color uint32_t_to_color(uint32_t rgba)
+{
+    Color c = {0};
+    uint32_t r = (rgba>> 0)&0xff;
+    uint32_t g = (rgba>> 8)&0xff;
+    uint32_t b = (rgba>>16)&0xff;
+    uint32_t a = (rgba>>24)&0xff;
+    c.r = r;
+    c.g = g;
+    c.b = b;
+    c.a = a;
+    return c;
+}
+
 Color color_from_hsv(float hue, float saturation, float value)
 {
     Color color = { 0, 0, 0, 255 };
