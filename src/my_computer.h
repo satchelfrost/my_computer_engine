@@ -242,10 +242,6 @@ void begin_mode_3D(Camera camera);
 void end_mode_3D();
 void update_camera_free(Camera *camera);
 
-bool draw_rectangle(int x, int y, int width, int height, Color color);
-bool draw_bounding_box_from_matrix_stack(Color color);
-bool draw_frustum(Color color, Camera camera);
-
 typedef struct {
     Rvk_Device device;
     Rvk_Swapchain swapchain;
@@ -452,6 +448,14 @@ void draw_model(Model model);
 void draw_mesh(Mesh mesh);
 void draw_default_cube();
 
+typedef enum {
+    SHAPE_2D_CIRCLE,
+    SHAPE_2D_RECTANGLE,
+    SHAPE_2D_COUNT,
+} Shape_2D;
+
+void draw_rectangle(int x, int y, int width, int height, Color color);
+void draw_circle(int x, int y, int radius, Color color);
 Rvk_Buffer create_compute_buffer(size_t size, void *data);
 Rvk_Buffer create_vertex_buffer(size_t size, void *vertices);
 Rvk_Buffer create_index_buffer(size_t size, void *indices);

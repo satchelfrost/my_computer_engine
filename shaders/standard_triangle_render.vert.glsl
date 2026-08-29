@@ -65,6 +65,7 @@ void main()
 
     out_position = position;
 
+    // TODO: I should be doing the transpose of the inverse here to save a little performance
     if ((pc.attribute_mask&ATTRIBUTE_NORMAL) > 0)
         out_normal = vec3(normals[gl_VertexIndex*3+0],normals[gl_VertexIndex*3+1],normals[gl_VertexIndex*3+2]);
     else

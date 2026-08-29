@@ -23,6 +23,8 @@ const char *shaders[] = {
     "standard_triangle_render.frag.glsl",
     "standard_text.vert.glsl",
     "standard_text.frag.glsl",
+    "primitive_2D.frag.glsl",
+    "primitive_2D.vert.glsl",
 };
 
 const char *examples[] = {
@@ -30,6 +32,7 @@ const char *examples[] = {
     "example_text",
     "example_gltf",
     "example_gltf_animation",
+    "example_primitive_2D",
 };
 
 struct {

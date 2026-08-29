@@ -72,7 +72,7 @@ static Camera current_camera = {0};
 
 /* standard descriptor set layouts */
 enum {
-    DS_LAYOUT_TRIANGLE_RENDER,
+    DS_LAYOUT_TRIANGLE_RENDER, // TODO: draw_model
     DS_LAYOUT_TEXT,
     DS_LAYOUT_COUNT,
 };
@@ -85,7 +85,7 @@ enum {
 
 /* standard/default pipelines and buffers */
 static struct {
-    struct { Rvk_Pipeline pl; } triangle_render;
+    struct { Rvk_Pipeline pl; } triangle_render; // TODO: draw model
     struct {
         Rvk_Pipeline pl;
         VkDescriptorSet ds;
@@ -103,6 +103,20 @@ static struct {
     } uniform_data;
 
     VkDescriptorSetLayout ds_layouts[DS_LAYOUT_COUNT];
+
+    struct {
+        Rvk_Pipeline pl;
+        struct {
+            int shape_2D;
+            int x;
+            int y;
+            int width;
+            int height;
+            int window_width;
+            int window_height;
+            uint32_t color;
+        } push_const;
+    } primitive_2D;
 
     Model shapes_3D;
 
@@ -249,6 +263,7 @@ void close_window()
     destroy_buffer(standard.uniform_buff);
     destroy_pipeline(standard.triangle_render.pl);
     destroy_pipeline(standard.text.pl);
+    destroy_pipeline(standard.primitive_2D.pl);
     destroy_model(standard.shapes_3D);
 
     for (size_t i = 0; i < DS_LAYOUT_COUNT; i++)
@@ -940,6 +955,7 @@ void unload_font(Font font)
     free(font.bitmap);
 }
 
+// TODO: put inside the standard struct
 struct {
     int x;
     int y;
@@ -1265,12 +1281,18 @@ Rvk_Pipeline create_triangle_rvk_pipeline(const char *vert_shader, const char *f
     assert(stages[1].module);
     sb.count = 0;
 
+    VkPipelineVertexInputStateCreateInfo *p_vert_input = NULL;
+    if (vert_input.sType != VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO)
+        p_vert_input = r_temp_default_empty_input_state_ci();
+    else
+        p_vert_input = &vert_input;
+
     /* temporary allocator */
     size_t temp_alloc_save_point = r_temp_save();
     vk_create_graphics_pipeline(vk_ctx.device.logical, NULL, NULL, &pl.handle,
                                 .stageCount = ARRAY_LEN(stages),
                                 .pStages = stages,
-                                .pVertexInputState = &vert_input,
+                                .pVertexInputState = p_vert_input,
                                 .pInputAssemblyState = r_temp_default_input_assembly_state_ci(),
                                 .pViewportState = r_temp_default_viewport_state_ci(vk_ctx.swapchain.extent),
                                 .pRasterizationState = r_temp_default_rasterization_state_ci(),
@@ -1668,7 +1690,7 @@ void draw_model(Model model)
     bind_graphics_pipeline(standard.triangle_render.pl.handle);
     set_viewport_scissor();
 
-    /* at some point we may want to get the model matrix from scene data */
+    /* TODO: at some point we may want to get the model matrix from scene data */
     tri_render_push_const.model = MatrixToFloatV(get_model());
 
     for (size_t i = 0; i < model.meshes.count; i++) {
@@ -1829,4 +1851,69 @@ int measure_text_ex(Font font, const char *text, size_t text_len)
     }
 
     return width;
+}
+
+void init_primitive_2D_pipeline()
+{
+    VkPipelineLayout layout = VK_NULL_HANDLE;
+    VkPushConstantRange pc_range = {
+        .stageFlags = VK_SHADER_STAGE_VERTEX_BIT|VK_SHADER_STAGE_FRAGMENT_BIT,
+        .size = sizeof(standard.primitive_2D.push_const)
+    };
+
+    vk_create_pipeline_layout(vk_ctx.device.logical, NULL, &layout,
+                              .pushConstantRangeCount = 1,
+                              .pPushConstantRanges = &pc_range);
+
+    VkPipelineVertexInputStateCreateInfo empty_vertex_input_ci = {0};
+    standard.primitive_2D.pl = create_triangle_rvk_pipeline("shaders/primitive_2D.vert.glsl.spv",
+                                                            "shaders/primitive_2D.frag.glsl.spv",
+                                                            layout,
+                                                            empty_vertex_input_ci);
+}
+
+void draw_rectangle(int x, int y, int width, int height, Color color)
+{
+    if (!standard.primitive_2D.pl.handle) init_primitive_2D_pipeline();
+
+    Window window = get_window();
+    standard.primitive_2D.push_const.shape_2D = SHAPE_2D_RECTANGLE;
+    standard.primitive_2D.push_const.x = x;
+    standard.primitive_2D.push_const.y = y;
+    standard.primitive_2D.push_const.width = width;
+    standard.primitive_2D.push_const.height = height;
+    standard.primitive_2D.push_const.window_width  = window.width;
+    standard.primitive_2D.push_const.window_height = window.height;
+    standard.primitive_2D.push_const.color = color_to_uint32_t(color);
+
+    VkCommandBuffer cb = get_command_buffer();
+    vkCmdBindPipeline(cb, VK_PIPELINE_BIND_POINT_GRAPHICS, standard.primitive_2D.pl.handle);
+    VkShaderStageFlags flags = VK_SHADER_STAGE_FRAGMENT_BIT|VK_SHADER_STAGE_VERTEX_BIT;
+    size_t size = sizeof(standard.primitive_2D.push_const);
+    vkCmdPushConstants(cb, standard.primitive_2D.pl.layout, flags, 0, size, &standard.primitive_2D.push_const);
+    set_viewport_scissor();
+    vkCmdDraw(cb, 6, 1, 0, 0);
+}
+
+void draw_circle(int x, int y, int radius, Color color)
+{
+    if (!standard.primitive_2D.pl.handle) init_primitive_2D_pipeline();
+
+    Window window = get_window();
+    standard.primitive_2D.push_const.shape_2D = SHAPE_2D_CIRCLE;
+    standard.primitive_2D.push_const.width  = radius*2;
+    standard.primitive_2D.push_const.height = radius*2;
+    standard.primitive_2D.push_const.x = x - standard.primitive_2D.push_const.width /2;
+    standard.primitive_2D.push_const.y = y - standard.primitive_2D.push_const.height/2;
+    standard.primitive_2D.push_const.window_width  = window.width;
+    standard.primitive_2D.push_const.window_height = window.height;
+    standard.primitive_2D.push_const.color = color_to_uint32_t(color);
+
+    VkCommandBuffer cb = get_command_buffer();
+    vkCmdBindPipeline(cb, VK_PIPELINE_BIND_POINT_GRAPHICS, standard.primitive_2D.pl.handle);
+    VkShaderStageFlags flags = VK_SHADER_STAGE_FRAGMENT_BIT|VK_SHADER_STAGE_VERTEX_BIT;
+    size_t size = sizeof(standard.primitive_2D.push_const);
+    vkCmdPushConstants(cb, standard.primitive_2D.pl.layout, flags, 0, size, &standard.primitive_2D.push_const);
+    set_viewport_scissor();
+    vkCmdDraw(cb, 6, 1, 0, 0);
 }
