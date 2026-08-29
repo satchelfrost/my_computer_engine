@@ -451,10 +451,12 @@ void draw_default_cube();
 typedef enum {
     SHAPE_2D_CIRCLE,
     SHAPE_2D_RECTANGLE,
+    SHAPE_2D_RECTANGLE_ROUNDED,
     SHAPE_2D_COUNT,
 } Shape_2D;
 
 void draw_rectangle(int x, int y, int width, int height, Color color);
+void draw_rectangle_rounded(int x, int y, int width, int height, int radius, Color color);
 void draw_circle(int x, int y, int radius, Color color);
 Rvk_Buffer create_compute_buffer(size_t size, void *data);
 Rvk_Buffer create_vertex_buffer(size_t size, void *vertices);

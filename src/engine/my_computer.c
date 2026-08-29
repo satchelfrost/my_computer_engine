@@ -94,6 +94,17 @@ static struct {
         Rvk_Buffer vertex;
         Font default_font;
         String_Builder sb;
+        struct {
+            int x;
+            int y;
+            int x0;
+            int y0;
+            int x1;
+            int y1;
+            uint32_t color;
+            int window_width;
+            int window_height;
+        } push_const;
     } text;
 
     Rvk_Buffer uniform_buff;
@@ -112,6 +123,7 @@ static struct {
             int y;
             int width;
             int height;
+            int radius;
             int window_width;
             int window_height;
             uint32_t color;
@@ -955,26 +967,13 @@ void unload_font(Font font)
     free(font.bitmap);
 }
 
-// TODO: put inside the standard struct
-struct {
-    int x;
-    int y;
-    int x0;
-    int y0;
-    int x1;
-    int y1;
-    uint32_t color;
-    int window_width;
-    int window_height;
-} text_push_const;
-
 void create_text_pipeline()
 {
     VkPipelineLayout layout = VK_NULL_HANDLE;
     Vulkan_Context vk_ctx = get_vulkan_context();
     VkPushConstantRange pc_range = {
         .stageFlags = VK_SHADER_STAGE_VERTEX_BIT|VK_SHADER_STAGE_FRAGMENT_BIT,
-        .size = sizeof(text_push_const)
+        .size = sizeof(standard.text.push_const)
     };
 
     vk_create_pipeline_layout(vk_ctx.device.logical, NULL, &layout,
@@ -1012,6 +1011,29 @@ void create_text_pipeline()
     standard.text.index  = create_index_buffer(sizeof(full_screen_quad_indices), full_screen_quad_indices);
 }
 
+void create_text_pipeline_fast()
+{
+    VkPipelineLayout layout = VK_NULL_HANDLE;
+    Vulkan_Context vk_ctx = get_vulkan_context();
+    VkPushConstantRange pc_range = {
+        .stageFlags = VK_SHADER_STAGE_VERTEX_BIT|VK_SHADER_STAGE_FRAGMENT_BIT,
+        .size = sizeof(standard.text.push_const)
+    };
+
+    vk_create_pipeline_layout(vk_ctx.device.logical, NULL, &layout,
+                              .pushConstantRangeCount = 1,
+                              .pPushConstantRanges = &pc_range,
+                              .setLayoutCount = 1,
+                              .pSetLayouts = &standard.ds_layouts[DS_LAYOUT_TEXT]);
+
+    VkPipelineVertexInputStateCreateInfo empty_vertex_input_ci = {0};
+
+    standard.text.pl = create_triangle_blend_rvk_pipeline("shaders/text.vert.glsl.spv",
+                                                          "shaders/text.frag.glsl.spv",
+                                                          layout,
+                                                          empty_vertex_input_ci);
+}
+
 void draw_text_at_base(const char *text, size_t text_len, int x, int y, Color color)
 {
     if (!standard.text.default_font.bitmap)
@@ -1019,10 +1041,16 @@ void draw_text_at_base(const char *text, size_t text_len, int x, int y, Color co
     draw_text_at_base_ex(standard.text.default_font, text, text_len, x, y, color);
 }
 
+#define FAST_TEXT
+
 void draw_text_at_base_ex(Font font, const char *text, size_t text_len, int x, int y, Color color)
 {
     if (!standard.text.pl.handle) {
+#ifdef FAST_TEXT
+        create_text_pipeline_fast();
+#else
         create_text_pipeline();
+#endif
 
         /* allocate and update descriptor sets for text bitmap */
         assert(standard.ds_layouts[DS_LAYOUT_TEXT]);
@@ -1056,19 +1084,23 @@ void draw_text_at_base_ex(Font font, const char *text, size_t text_len, int x, i
         uint8_t ch = text[c];
         if (!(FIRST_CHAR <= ch && ch < (CHAR_COUNT + FIRST_CHAR))) continue;
         Glyph glyph = font.glyphs[ch-FIRST_CHAR];
-        text_push_const.color = color_to_uint32_t(color);
-        text_push_const.x = x + x_advance + glyph.x_offset;
-        text_push_const.y = y + glyph.y_offset;
-        text_push_const.x0 = glyph.x0;
-        text_push_const.y0 = glyph.y0;
-        text_push_const.x1 = glyph.x1;
-        text_push_const.y1 = glyph.y1;
-        text_push_const.window_width = window.width;
-        text_push_const.window_height= window.height;
+        standard.text.push_const.color = color_to_uint32_t(color);
+        standard.text.push_const.x = x + x_advance + glyph.x_offset;
+        standard.text.push_const.y = y + glyph.y_offset;
+        standard.text.push_const.x0 = glyph.x0;
+        standard.text.push_const.y0 = glyph.y0;
+        standard.text.push_const.x1 = glyph.x1;
+        standard.text.push_const.y1 = glyph.y1;
+        standard.text.push_const.window_width = window.width;
+        standard.text.push_const.window_height= window.height;
 
         vkCmdPushConstants(cb, standard.text.pl.layout, VK_SHADER_STAGE_VERTEX_BIT|VK_SHADER_STAGE_FRAGMENT_BIT,
-                           0, sizeof(text_push_const), &text_push_const);
+                           0, sizeof(standard.text.push_const), &standard.text.push_const);
+#ifdef FAST_TEXT
+        vkCmdDraw(cb, 6, 1, 0, 0);
+#else
         r_cmd_draw_buffers(cb, standard.text.vertex.info.buffer, standard.text.index.info.buffer, ARRAY_LEN(full_screen_quad_indices));
+#endif
 
         x_advance += glyph.x_advance;
     }
@@ -1872,16 +1904,17 @@ void init_primitive_2D_pipeline()
                                                             empty_vertex_input_ci);
 }
 
-void draw_rectangle(int x, int y, int width, int height, Color color)
+void draw_rectangle_rounded(int x, int y, int width, int height, int radius, Color color)
 {
     if (!standard.primitive_2D.pl.handle) init_primitive_2D_pipeline();
 
     Window window = get_window();
-    standard.primitive_2D.push_const.shape_2D = SHAPE_2D_RECTANGLE;
+    standard.primitive_2D.push_const.shape_2D = radius>0 ? SHAPE_2D_RECTANGLE_ROUNDED : SHAPE_2D_RECTANGLE;
     standard.primitive_2D.push_const.x = x;
     standard.primitive_2D.push_const.y = y;
     standard.primitive_2D.push_const.width = width;
     standard.primitive_2D.push_const.height = height;
+    standard.primitive_2D.push_const.radius = radius;
     standard.primitive_2D.push_const.window_width  = window.width;
     standard.primitive_2D.push_const.window_height = window.height;
     standard.primitive_2D.push_const.color = color_to_uint32_t(color);
@@ -1893,6 +1926,11 @@ void draw_rectangle(int x, int y, int width, int height, Color color)
     vkCmdPushConstants(cb, standard.primitive_2D.pl.layout, flags, 0, size, &standard.primitive_2D.push_const);
     set_viewport_scissor();
     vkCmdDraw(cb, 6, 1, 0, 0);
+}
+
+void draw_rectangle(int x, int y, int width, int height, Color color)
+{
+    draw_rectangle_rounded(x, y, width, height, 0, color);
 }
 
 void draw_circle(int x, int y, int radius, Color color)

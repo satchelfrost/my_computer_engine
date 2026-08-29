@@ -12,15 +12,15 @@ layout(location = 0) out vec2 out_uv;
  */
 
 layout(push_constant) uniform constants {
-    int shape_2D;
     int x;
     int y;
-    int width;
-    int height;
-    int radius;
+    int x0;
+    int y0;
+    int x1;
+    int y1;
+    uint color;
     int window_width;
     int window_height;
-    uint color;
 } pc;
 
 const vec2 uvs[6] = vec2[](
@@ -34,10 +34,12 @@ const vec2 uvs[6] = vec2[](
 
 void main()
 {
-    vec2 ndc0 = vec2( pc.x          /float(pc.window_width), (pc.y+pc.height)/float(pc.window_height))*vec2(2.0) - vec2(1.0);
-    vec2 ndc1 = vec2( pc.x          /float(pc.window_width),  pc.y           /float(pc.window_height))*vec2(2.0) - vec2(1.0);
-    vec2 ndc2 = vec2((pc.x+pc.width)/float(pc.window_width), (pc.y+pc.height)/float(pc.window_height))*vec2(2.0) - vec2(1.0);
-    vec2 ndc3 = vec2((pc.x+pc.width)/float(pc.window_width),  pc.y           /float(pc.window_height))*vec2(2.0) - vec2(1.0);
+    int height = pc.y1 - pc.y0 + 1;
+    int width  = pc.x1 - pc.x0 + 1;
+    vec2 ndc0 = vec2( pc.x       /float(pc.window_width), (pc.y+height)/float(pc.window_height))*vec2(2.0) - vec2(1.0);
+    vec2 ndc1 = vec2( pc.x       /float(pc.window_width),  pc.y        /float(pc.window_height))*vec2(2.0) - vec2(1.0);
+    vec2 ndc2 = vec2((pc.x+width)/float(pc.window_width), (pc.y+height)/float(pc.window_height))*vec2(2.0) - vec2(1.0);
+    vec2 ndc3 = vec2((pc.x+width)/float(pc.window_width),  pc.y        /float(pc.window_height))*vec2(2.0) - vec2(1.0);
 
     // hmm... no bounds checking
 

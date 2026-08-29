@@ -15,6 +15,7 @@ int main()
     while (!window_should_close()) {
         begin_drawing(bg);
             draw_text_at_base(text, text_len, WINDOW_WIDTH/2 - text_width/2, WINDOW_HEIGHT/2, PURPLE);
+            draw_fps();
         end_drawing();
     }
 

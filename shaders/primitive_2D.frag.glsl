@@ -1,7 +1,8 @@
 #version 450
 
-#define SHAPE_2D_CIRCLE    0
-#define SHAPE_2D_RECTANGLE 1
+#define SHAPE_2D_CIRCLE            0
+#define SHAPE_2D_RECTANGLE         1
+#define SHAPE_2D_RECTANGLE_ROUNDED 2
 
 layout(location = 0) in vec2 in_uv;
 layout(location = 0) out vec4 out_color;
@@ -12,6 +13,7 @@ layout(push_constant) uniform constants {
     int y;
     int width;
     int height;
+    int radius;
     int window_width;
     int window_height;
     uint color;
@@ -26,7 +28,7 @@ vec4 srgb_to_linear(vec4 srgb)
 
 void main()
 {
-    float radius = 15;
+    int radius = pc.radius;
     vec2 coords = in_uv*vec2(pc.width, pc.height);
     bool in_circles = length(coords - vec2(radius, radius)) < radius ||
                       length(coords - vec2(pc.width - radius, radius)) < radius ||
@@ -38,14 +40,11 @@ void main()
     switch (pc.shape_2D) {
     case SHAPE_2D_CIRCLE:
         if (length(in_uv - vec2(0.5, 0.5)) > 0.5) discard;
-        // if (!in_circles) discard;
-        // if (!in_cutout) discard;
-        // if (!(in_circles || in_cutout)) discard;
+    break;
+    case SHAPE_2D_RECTANGLE_ROUNDED:
+        if (!(in_circles || in_cutout)) discard;
     break;
     case SHAPE_2D_RECTANGLE:
-        // if (!in_circles) discard;
-        // if (!in_cutout) discard;
-        if (!(in_circles || in_cutout)) discard;
     break;
     }
     out_color = srgb_to_linear(unpackUnorm4x8(pc.color));

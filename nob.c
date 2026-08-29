@@ -25,6 +25,8 @@ const char *shaders[] = {
     "standard_text.frag.glsl",
     "primitive_2D.frag.glsl",
     "primitive_2D.vert.glsl",
+    "text.vert.glsl",
+    "text.frag.glsl",
 };
 
 const char *examples[] = {
