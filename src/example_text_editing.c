@@ -1,5 +1,9 @@
 #include "my_computer.h"
 
+#define WINDOW_WIDTH 800
+#define WINDOW_HEIGHT 600
+#define FONT_SIZE 30
+
 typedef struct {
     struct {
         int x, y;
@@ -13,8 +17,6 @@ typedef struct {
     } blink;
 } Cursor;
 
-#define WINDOW_WIDTH 800
-#define WINDOW_HEIGHT 600
 
 #define MAX_COLS 100
 #define MAX_ROWS 100
@@ -23,14 +25,15 @@ char text[MAX_COLS][MAX_ROWS] = {0};
 int main()
 {
     init_window(WINDOW_WIDTH, WINDOW_HEIGHT, "text editing");
+    Font font = load_font("assets/RobotoMono-Medium.ttf", FONT_SIZE);
 
     for (int y = 0; y < MAX_ROWS; y++)
         for (int x = 0; x < MAX_ROWS; x++)
             text[y][x] = 32;
 
     Cursor cursor = {
-        .width = 27,
-        .height = 42,
+        .width = font.glyphs[0].x_advance,
+        .height = FONT_SIZE,
         .draw = true,
         .blink = {.threshold = 0.5},
     };
@@ -87,6 +90,20 @@ int main()
                 if (!(nx*cursor.width > WINDOW_WIDTH)) cursor.position.x = nx;
             }
         }
+        if (is_key_pressed(KEY_BACKSPACE)) {
+            if (cursor.position.x < MAX_COLS && cursor.position.y < MAX_COLS) {
+                int nx = cursor.position.x - 1;
+                if (nx < 0) {
+                    text[cursor.position.y][0] = KEY_SPACE;
+                } else {
+                    text[cursor.position.y][nx] = KEY_SPACE;
+                    cursor.position.x = nx;
+
+                }
+                cursor.draw = true;
+                cursor.blink.timer = 0;
+            }
+        }
 
         float dt = get_frame_time();
         cursor.blink.timer += dt;
@@ -96,13 +113,15 @@ int main()
         }
 
         begin_drawing(BLACK);
-            if (cursor.draw) draw_rectangle(cursor.position.x*cursor.width, cursor.position.y*cursor.height, cursor.width, cursor.height, WHITE);
+            if (cursor.draw)
+                draw_rectangle(cursor.position.x*cursor.width, cursor.position.y*cursor.height,
+                               cursor.width, cursor.height, WHITE);
             for (size_t y = 0; y < MAX_COLS; y++) {
                 if (y*cursor.height > WINDOW_HEIGHT) continue;
                 for (size_t x = 0; x < MAX_ROWS; x++) {
                     if (x*cursor.width > WINDOW_WIDTH) continue;
                     char *c = &text[y][x];
-                    draw_text_at_base(c, 1, cursor.width*x, cursor.height*y+30, WHITE);
+                    draw_text_at_base_ex(font, c, 1, cursor.width*x, cursor.height*y+FONT_SIZE*3/4, WHITE);
                 }
             }
         end_drawing();
