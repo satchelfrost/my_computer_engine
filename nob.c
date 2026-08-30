@@ -35,6 +35,7 @@ const char *examples[] = {
     "example_gltf",
     "example_gltf_animation",
     "example_primitive_2D",
+    "example_text_editing",
 };
 
 struct {
