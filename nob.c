@@ -19,10 +19,8 @@ const char *my_computer_srcs[] = {
 };
 
 const char *shaders[] = {
-    "standard_triangle_render.vert.glsl",
-    "standard_triangle_render.frag.glsl",
-    "standard_text.vert.glsl",
-    "standard_text.frag.glsl",
+    "draw_model.vert.glsl",
+    "draw_model.frag.glsl",
     "primitive_2D.frag.glsl",
     "primitive_2D.vert.glsl",
     "text.vert.glsl",

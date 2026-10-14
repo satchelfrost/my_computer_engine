@@ -72,7 +72,7 @@ static Camera current_camera = {0};
 
 /* standard descriptor set layouts */
 enum {
-    DS_LAYOUT_TRIANGLE_RENDER, // TODO: draw_model
+    DS_LAYOUT_DRAW_MODEL,
     DS_LAYOUT_TEXT,
     DS_LAYOUT_COUNT,
 };
@@ -83,15 +83,13 @@ enum {
     EYE_COUNT,
 };
 
-/* standard/default pipelines and buffers */
+/* default pipelines and buffers */
 static struct {
-    struct { Rvk_Pipeline pl; } triangle_render; // TODO: draw model
+    struct { Rvk_Pipeline pl; } draw_model;
     struct {
         Rvk_Pipeline pl;
         VkDescriptorSet ds;
         Rvk_Texture bitmap;
-        Rvk_Buffer index;
-        Rvk_Buffer vertex;
         Font default_font;
         String_Builder sb;
         struct {
@@ -107,11 +105,11 @@ static struct {
         } push_const;
     } text;
 
-    Rvk_Buffer uniform_buff;
+    Rvk_Buffer uniform_buff; // TODO: should this be draw model?
     struct {
         float16 proj[EYE_COUNT];
         float16 view[EYE_COUNT];
-    } uniform_data;
+    } uniform_data; // TODO: should this be in draw model?
 
     VkDescriptorSetLayout ds_layouts[DS_LAYOUT_COUNT];
 
@@ -151,15 +149,6 @@ static struct {
 #define FPS_AVERAGE_TIME_SECONDS 0.5f
 #define FPS_STEP (FPS_AVERAGE_TIME_SECONDS/FPS_CAPTURE_FRAMES_COUNT)
 #define DEAD_ZONE 0.25f
-
-static Vector2 full_screen_quad_verts[] = {
-    {-1.0, -1.0},
-    { 1.0, -1.0},
-    {-1.0,  1.0},
-    { 1.0,  1.0},
-};
-
-static uint16_t full_screen_quad_indices[] = { 0, 1, 2, 2, 1, 3, };
 
 struct {
     int exit_key;
@@ -270,10 +259,8 @@ void close_window()
 
     unload_font(standard.text.default_font);
     destroy_texture(standard.text.bitmap);
-    destroy_buffer(standard.text.vertex);
-    destroy_buffer(standard.text.index);
     destroy_buffer(standard.uniform_buff);
-    destroy_pipeline(standard.triangle_render.pl);
+    destroy_pipeline(standard.draw_model.pl);
     destroy_pipeline(standard.text.pl);
     destroy_pipeline(standard.primitive_2D.pl);
     destroy_model(standard.shapes_3D);
@@ -982,50 +969,6 @@ void create_text_pipeline()
                               .setLayoutCount = 1,
                               .pSetLayouts = &standard.ds_layouts[DS_LAYOUT_TEXT]);
 
-    VkVertexInputAttributeDescription vert_attrs[] = {
-        {
-            .location = 0,
-            .format   = VK_FORMAT_R32G32_SFLOAT,
-            .offset   =  0,
-        },
-    };
-    VkVertexInputBindingDescription vert_bindings = {
-        .inputRate = VK_VERTEX_INPUT_RATE_VERTEX,
-        .stride    = sizeof(Vector2),
-    };
-    VkPipelineVertexInputStateCreateInfo vertex_input_ci = {
-        .sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO,
-        .vertexBindingDescriptionCount = 1,
-        .pVertexBindingDescriptions = &vert_bindings,
-        .vertexAttributeDescriptionCount = ARRAY_LEN(vert_attrs),
-        .pVertexAttributeDescriptions = vert_attrs,
-    };
-
-    standard.text.pl = create_triangle_blend_rvk_pipeline("shaders/standard_text.vert.glsl.spv",
-                                                          "shaders/standard_text.frag.glsl.spv",
-                                                          layout,
-                                                          vertex_input_ci);
-
-    /* create and upload quad vertex buffer */
-    standard.text.vertex = create_vertex_buffer(sizeof(full_screen_quad_verts), full_screen_quad_verts);
-    standard.text.index  = create_index_buffer(sizeof(full_screen_quad_indices), full_screen_quad_indices);
-}
-
-void create_text_pipeline_fast()
-{
-    VkPipelineLayout layout = VK_NULL_HANDLE;
-    Vulkan_Context vk_ctx = get_vulkan_context();
-    VkPushConstantRange pc_range = {
-        .stageFlags = VK_SHADER_STAGE_VERTEX_BIT|VK_SHADER_STAGE_FRAGMENT_BIT,
-        .size = sizeof(standard.text.push_const)
-    };
-
-    vk_create_pipeline_layout(vk_ctx.device.logical, NULL, &layout,
-                              .pushConstantRangeCount = 1,
-                              .pPushConstantRanges = &pc_range,
-                              .setLayoutCount = 1,
-                              .pSetLayouts = &standard.ds_layouts[DS_LAYOUT_TEXT]);
-
     VkPipelineVertexInputStateCreateInfo empty_vertex_input_ci = {0};
 
     standard.text.pl = create_triangle_blend_rvk_pipeline("shaders/text.vert.glsl.spv",
@@ -1041,16 +984,10 @@ void draw_text_at_base(const char *text, size_t text_len, int x, int y, Color co
     draw_text_at_base_ex(standard.text.default_font, text, text_len, x, y, color);
 }
 
-#define FAST_TEXT
-
 void draw_text_at_base_ex(Font font, const char *text, size_t text_len, int x, int y, Color color)
 {
     if (!standard.text.pl.handle) {
-#ifdef FAST_TEXT
-        create_text_pipeline_fast();
-#else
         create_text_pipeline();
-#endif
 
         /* allocate and update descriptor sets for text bitmap */
         assert(standard.ds_layouts[DS_LAYOUT_TEXT]);
@@ -1096,11 +1033,7 @@ void draw_text_at_base_ex(Font font, const char *text, size_t text_len, int x, i
 
         vkCmdPushConstants(cb, standard.text.pl.layout, VK_SHADER_STAGE_VERTEX_BIT|VK_SHADER_STAGE_FRAGMENT_BIT,
                            0, sizeof(standard.text.push_const), &standard.text.push_const);
-#ifdef FAST_TEXT
         vkCmdDraw(cb, 6, 1, 0, 0);
-#else
-        r_cmd_draw_buffers(cb, standard.text.vertex.info.buffer, standard.text.index.info.buffer, ARRAY_LEN(full_screen_quad_indices));
-#endif
 
         x_advance += glyph.x_advance;
     }
@@ -1184,7 +1117,7 @@ void destroy_pipeline(Rvk_Pipeline pipeline)
 
 void setup_required_standard_ds_layouts()
 {
-    /* standard_triangle_render.vert.glsl */
+    /* draw_model.vert.glsl */
     VkDescriptorSetLayoutBinding tri_bindings[] = {
         {
             .binding         = 0,
@@ -1247,7 +1180,7 @@ void setup_required_standard_ds_layouts()
             .stageFlags      = VK_SHADER_STAGE_FRAGMENT_BIT,
         },
     };
-    vk_create_descriptor_set_layout(vk_ctx.device.logical, NULL, &standard.ds_layouts[DS_LAYOUT_TRIANGLE_RENDER],
+    vk_create_descriptor_set_layout(vk_ctx.device.logical, NULL, &standard.ds_layouts[DS_LAYOUT_DRAW_MODEL],
                                     .pBindings = tri_bindings,
                                     .bindingCount = ARRAY_LEN(tri_bindings));
 
@@ -1460,7 +1393,7 @@ struct {
     uint32_t material_mask;
 } tri_render_push_const;
 
-void init_tri_model_pipeline()
+void init_draw_model_pipeline()
 {
     VkPipelineLayout layout = VK_NULL_HANDLE;
     Vulkan_Context vk_ctx = get_vulkan_context();
@@ -1473,7 +1406,7 @@ void init_tri_model_pipeline()
                               .pushConstantRangeCount = 1,
                               .pPushConstantRanges = &pc_range,
                               .setLayoutCount = 1,
-                              .pSetLayouts = &standard.ds_layouts[DS_LAYOUT_TRIANGLE_RENDER]);
+                              .pSetLayouts = &standard.ds_layouts[DS_LAYOUT_DRAW_MODEL]);
 
     VkVertexInputAttributeDescription vert_attrs[] = {
         {
@@ -1494,10 +1427,10 @@ void init_tri_model_pipeline()
         .pVertexAttributeDescriptions = vert_attrs,
     };
 
-    standard.triangle_render.pl = create_triangle_rvk_pipeline("shaders/standard_triangle_render.vert.glsl.spv",
-                                                               "shaders/standard_triangle_render.frag.glsl.spv",
-                                                               layout,
-                                                               vertex_input_ci);
+    standard.draw_model.pl = create_triangle_rvk_pipeline("shaders/draw_model.vert.glsl.spv",
+                                                          "shaders/draw_model.frag.glsl.spv",
+                                                          layout,
+                                                          vertex_input_ci);
 }
 
 void destroy_model(Model model)
@@ -1619,11 +1552,11 @@ void load_model_gpu(Model *model)
             metallic_roughness_image_info = &model->phony.texture.info;
 
         /* allocate descriptor set */
-        assert(standard.ds_layouts[DS_LAYOUT_TRIANGLE_RENDER]);
+        assert(standard.ds_layouts[DS_LAYOUT_DRAW_MODEL]);
         vk_allocate_descriptor_sets(vk_ctx.device.logical, &mesh->gpu.ds,
                                     .descriptorPool = vk_ctx.pool,
                                     .descriptorSetCount = 1,
-                                    .pSetLayouts = &standard.ds_layouts[DS_LAYOUT_TRIANGLE_RENDER]);
+                                    .pSetLayouts = &standard.ds_layouts[DS_LAYOUT_DRAW_MODEL]);
 
         /* update descriptor set */
         VkWriteDescriptorSet writes[] = {
@@ -1716,10 +1649,10 @@ void load_model_gpu(Model *model)
 
 void draw_model(Model model)
 {
-    if (!standard.triangle_render.pl.handle) init_tri_model_pipeline();
+    if (!standard.draw_model.pl.handle) init_draw_model_pipeline();
 
     VkCommandBuffer cb = get_command_buffer();
-    bind_graphics_pipeline(standard.triangle_render.pl.handle);
+    bind_graphics_pipeline(standard.draw_model.pl.handle);
     set_viewport_scissor();
 
     /* TODO: at some point we may want to get the model matrix from scene data */
@@ -1734,9 +1667,9 @@ void draw_model(Model model)
         uint32_t default_color = color_to_uint32_t(MAGENTA);
         tri_render_push_const.color = color ? color : default_color;
         VkShaderStageFlags flags = VK_SHADER_STAGE_VERTEX_BIT|VK_SHADER_STAGE_FRAGMENT_BIT;
-        vkCmdPushConstants(cb, standard.triangle_render.pl.layout, flags, 0, sizeof(tri_render_push_const), &tri_render_push_const);
+        vkCmdPushConstants(cb, standard.draw_model.pl.layout, flags, 0, sizeof(tri_render_push_const), &tri_render_push_const);
         vkCmdBindDescriptorSets(cb, VK_PIPELINE_BIND_POINT_GRAPHICS,
-                                standard.triangle_render.pl.layout, 0, 1,
+                                standard.draw_model.pl.layout, 0, 1,
                                 &mesh.gpu.ds, 0, NULL);
         VkDeviceSize offsets[] = {0};
         vkCmdBindVertexBuffers(cb, 0, 1, &mesh.gpu.vertex.info.buffer, offsets);
@@ -1747,10 +1680,10 @@ void draw_model(Model model)
 
 void draw_mesh(Mesh mesh)
 {
-    if (!standard.triangle_render.pl.handle) init_tri_model_pipeline();
+    if (!standard.draw_model.pl.handle) init_draw_model_pipeline();
 
     VkCommandBuffer cb = get_command_buffer();
-    bind_graphics_pipeline(standard.triangle_render.pl.handle);
+    bind_graphics_pipeline(standard.draw_model.pl.handle);
     set_viewport_scissor();
 
     /* at some point we may want to get the model matrix from scene data */
@@ -1762,9 +1695,9 @@ void draw_mesh(Mesh mesh)
     uint32_t default_color = color_to_uint32_t(MAGENTA);
     tri_render_push_const.color = color ? color : default_color;
     VkShaderStageFlags flags = VK_SHADER_STAGE_VERTEX_BIT|VK_SHADER_STAGE_FRAGMENT_BIT;
-    vkCmdPushConstants(cb, standard.triangle_render.pl.layout, flags, 0, sizeof(tri_render_push_const), &tri_render_push_const);
+    vkCmdPushConstants(cb, standard.draw_model.pl.layout, flags, 0, sizeof(tri_render_push_const), &tri_render_push_const);
     vkCmdBindDescriptorSets(cb, VK_PIPELINE_BIND_POINT_GRAPHICS,
-                            standard.triangle_render.pl.layout, 0, 1,
+                            standard.draw_model.pl.layout, 0, 1,
                             &mesh.gpu.ds, 0, NULL);
     VkDeviceSize offsets[] = {0};
     vkCmdBindVertexBuffers(cb, 0, 1, &mesh.gpu.vertex.info.buffer, offsets);

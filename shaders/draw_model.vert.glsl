@@ -1,6 +1,6 @@
 #version 450
 
-#define FLAG_STEREO         (1<<0)
+#define FLAG_STEREO      (1<<0)
 
 #define ATTRIBUTE_NORMAL (1<<0)
 #define ATTRIBUTE_UV     (1<<1)
@@ -82,17 +82,26 @@ void main()
         out_color = unpackUnorm4x8(pc.color);
 
     if ((pc.attribute_mask&ATTRIBUTE_TANGET) > 0)
-        out_tanget = vec4(tangets[gl_VertexIndex*4+0],tangets[gl_VertexIndex*4+1],tangets[gl_VertexIndex*4+2], tangets[gl_VertexIndex*4+3]);
+        out_tanget = vec4(tangets[gl_VertexIndex*4+0],
+                          tangets[gl_VertexIndex*4+1],
+                          tangets[gl_VertexIndex*4+2],
+                          tangets[gl_VertexIndex*4+3]);
     else
         out_tanget = vec4(0.0);
 
     if ((pc.attribute_mask&ATTRIBUTE_JOINT) > 0)
-        out_joint = vec4(joints[gl_VertexIndex*4+0],joints[gl_VertexIndex*4+1],joints[gl_VertexIndex*4+2], joints[gl_VertexIndex*4+3]);
+        out_joint = vec4(joints[gl_VertexIndex*4+0],
+                         joints[gl_VertexIndex*4+1],
+                         joints[gl_VertexIndex*4+2],
+                         joints[gl_VertexIndex*4+3]);
     else
         out_joint = vec4(0.0);
 
     if ((pc.attribute_mask&ATTRIBUTE_WEIGHT) > 0)
-        out_weight = vec4(weights[gl_VertexIndex*4+0],weights[gl_VertexIndex*4+1],weights[gl_VertexIndex*4+2], weights[gl_VertexIndex*4+3]);
+        out_weight = vec4(weights[gl_VertexIndex*4+0],
+                          weights[gl_VertexIndex*4+1],
+                          weights[gl_VertexIndex*4+2],
+                          weights[gl_VertexIndex*4+3]);
     else
         out_weight = vec4(0.0);
 }
