@@ -1,5 +1,9 @@
+# build system
 nob
 nob.old
 tags
 build
 *.spv
+
+# assets
+sponza

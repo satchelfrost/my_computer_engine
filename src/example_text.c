@@ -1,21 +1,16 @@
 #include "my_computer.h"
 
-#define WINDOW_WIDTH  800
-#define WINDOW_HEIGHT 600
-
 int main()
 {
-    init_window(WINDOW_WIDTH, WINDOW_HEIGHT, "example text");
+    init_window(800, 600, "my_computer_engine - example text");
 
-    const char *text = "Hello Wolrd!";
+    const char *text = "Hello World!";
     size_t text_len = strlen(text);
     int text_width = measure_text(text, text_len);
-    Color bg = {30, 30, 30, 255};
 
     while (!window_should_close()) {
-        begin_drawing(bg);
-            draw_text_at_base(text, text_len, WINDOW_WIDTH/2 - text_width/2, WINDOW_HEIGHT/2, PURPLE);
-            draw_fps();
+        begin_drawing(WHITE);
+            draw_text_at_base(text, strlen(text), 800/2 - text_width/2, 600/2, BLACK);
         end_drawing();
     }
 
