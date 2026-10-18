@@ -1,4 +1,4 @@
-# My Computer Engine
+# my_computer Engine
 
 **A basic graphics library heavily inspired by raylib, but specialized for OpenXR and Vulkan.**
 

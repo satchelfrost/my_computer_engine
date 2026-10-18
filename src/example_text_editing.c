@@ -81,6 +81,29 @@ int main()
             }
         }
 
+        if (is_key_pressed(KEY_PERIOD)) {
+            if (cursor.position.x < MAX_COLS && cursor.position.y < MAX_COLS) {
+                text[cursor.position.y][cursor.position.x] = '.';
+
+                cursor.draw = true;
+                cursor.blink.timer = 0;
+                int nx = cursor.position.x + 1;
+                if (!(nx*cursor.width > WINDOW_WIDTH)) cursor.position.x = nx;
+            }
+        }
+
+        if (is_key_pressed(KEY_MINUS)) {
+            bool shift = is_key_down(KEY_LEFT_SHIFT);
+            if (cursor.position.x < MAX_COLS && cursor.position.y < MAX_COLS) {
+                text[cursor.position.y][cursor.position.x] = shift ? '_' : '-';
+
+                cursor.draw = true;
+                cursor.blink.timer = 0;
+                int nx = cursor.position.x + 1;
+                if (!(nx*cursor.width > WINDOW_WIDTH)) cursor.position.x = nx;
+            }
+        }
+
         if (is_key_pressed(KEY_SPACE)) {
             if (cursor.position.x < MAX_COLS && cursor.position.y < MAX_COLS) {
                 text[cursor.position.y][cursor.position.x] = KEY_SPACE;
