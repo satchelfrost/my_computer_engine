@@ -4,7 +4,7 @@ int main()
 {
     init_window(500, 500, "gltf");
 
-    Model psx = load_model_from_gltf("assets/psx/scene.gltf");
+    Model psx = load_model_gltf("assets/psx/scene.gltf");
 
     Camera camera = {
         .position = {0.0f, 2.0f, 5.0f},

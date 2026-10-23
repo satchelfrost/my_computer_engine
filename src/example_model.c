@@ -16,7 +16,7 @@ uint32_t rand_color()
 int main()
 {
     init_window(800, 450, "cube");
-    Model bunny  = load_model_from_obj("assets/bunny.obj");
+    Model bunny  = load_model_obj("assets/bunny.obj");
     bunny.meshes.items[0].material.color = GOLD;
     Shape_3D shape = SHAPE_3D_CUBE;
 

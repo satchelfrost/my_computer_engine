@@ -20,7 +20,7 @@ void obj_file_reader(void *ctx, const char *file_path, int is_mtl, const char *o
     *count = sb->count;
 }
 
-Model load_model_from_obj_into_memory(const char *file_path)
+Model load_model_obj_into_memory(const char *file_path)
 {
     Model model = {0};
     Mesh mesh = {0};
@@ -93,9 +93,9 @@ Model load_model_from_obj_into_memory(const char *file_path)
     return model;
 }
 
-Model load_model_from_obj(const char *file_path)
+Model load_model_obj(const char *file_path)
 {
-    Model model = load_model_from_obj_into_memory(file_path);
+    Model model = load_model_obj_into_memory(file_path);
     load_model_gpu(&model);
     return model;
 }

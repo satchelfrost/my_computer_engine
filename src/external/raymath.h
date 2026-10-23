@@ -209,6 +209,7 @@ Vector4 Vector4Transform(Vector4 v, Matrix mat);
 Vector3 Vector3RotateByQuaternion(Vector3 v, Quaternion q);
 Vector3 Vector3RotateByAxisAngle(Vector3 v, Vector3 axis, float angle);
 Vector3 Vector3Lerp(Vector3 v1, Vector3 v2, float amount);
+Vector3 Vector3CubicHermite(Vector3 v1, Vector3 tangent1, Vector3 v2, Vector3 tangent2, float amount);
 Vector3 Vector3Reflect(Vector3 v, Vector3 normal);
 Vector3 Vector3Min(Vector3 v1, Vector3 v2);
 Vector3 Vector3Max(Vector3 v1, Vector3 v2);
@@ -220,6 +221,9 @@ Vector3 Vector3Clamp(Vector3 v, Vector3 min, Vector3 max);
 Vector3 Vector3ClampValue(Vector3 v, float min, float max);
 int Vector3Equals(Vector3 p, Vector3 q);
 Vector3 Vector3Refract(Vector3 v, Vector3 n, float r);
+float Vector4DotProduct(Vector4 v1, Vector4 v2);
+Vector4 Vector4Negate(Vector4 v);
+Vector4 Vector4Scale(Vector4 v, float scale);
 float MatrixDeterminant(Matrix mat);
 float MatrixTrace(Matrix mat);
 Matrix MatrixTranspose(Matrix mat);
@@ -242,6 +246,7 @@ Matrix MatrixPerspectiveVk(double fovYRadians, double aspect, double nearPlane, 
 Matrix MatrixOrtho(double left, double right, double bottom, double top, double nearPlane, double farPlane);
 Matrix MatrixLookAt(Vector3 eye, Vector3 target, Vector3 up);
 float16 MatrixToFloatV(Matrix mat);
+void MatrixDecompose(Matrix mat, Vector3 *translation, Quaternion *rotation, Vector3 *scale);
 Quaternion QuaternionAdd(Quaternion q1, Quaternion q2);
 Quaternion QuaternionAddValue(Quaternion q, float add);
 Quaternion QuaternionSubtract(Quaternion q1, Quaternion q2);
@@ -265,6 +270,7 @@ Quaternion QuaternionFromEuler(float pitch, float yaw, float roll);
 Vector3 QuaternionToEuler(Quaternion q);
 Quaternion QuaternionTransform(Quaternion q, Matrix mat);
 int QuaternionEquals(Quaternion p, Quaternion q);
+Quaternion QuaternionCubicHermiteSpline(Quaternion q1, Quaternion outTangent1, Quaternion q2, Quaternion inTangent2, float t);
 
 #endif // RAYMATH_H
 
@@ -1007,6 +1013,20 @@ Vector3 Vector3Lerp(Vector3 v1, Vector3 v2, float amount)
     return result;
 }
 
+Vector3 Vector3CubicHermite(Vector3 v1, Vector3 tangent1, Vector3 v2, Vector3 tangent2, float amount)
+{
+    Vector3 result = { 0 };
+
+    float amountPow2 = amount*amount;
+    float amountPow3 = amount*amount*amount;
+
+    result.x = (2*amountPow3 - 3*amountPow2 + 1)*v1.x + (amountPow3 - 2*amountPow2 + amount)*tangent1.x + (-2*amountPow3 + 3*amountPow2)*v2.x + (amountPow3 - amountPow2)*tangent2.x;
+    result.y = (2*amountPow3 - 3*amountPow2 + 1)*v1.y + (amountPow3 - 2*amountPow2 + amount)*tangent1.y + (-2*amountPow3 + 3*amountPow2)*v2.y + (amountPow3 - amountPow2)*tangent2.y;
+    result.z = (2*amountPow3 - 3*amountPow2 + 1)*v1.z + (amountPow3 - 2*amountPow2 + amount)*tangent1.z + (-2*amountPow3 + 3*amountPow2)*v2.z + (amountPow3 - amountPow2)*tangent2.z;
+
+    return result;
+}
+
 // Calculate reflected vector to normal
 Vector3 Vector3Reflect(Vector3 v, Vector3 normal)
 {
@@ -1255,6 +1275,28 @@ Vector3 Vector3Refract(Vector3 v, Vector3 n, float r)
         result = v;
     }
 
+    return result;
+}
+
+//----------------------------------------------------------------------------------
+// Module Functions Definition - Vector4 math
+//----------------------------------------------------------------------------------
+
+float Vector4DotProduct(Vector4 v1, Vector4 v2)
+{
+    float result = (v1.x*v2.x + v1.y*v2.y + v1.z*v2.z + v1.w*v2.w);
+    return result;
+}
+
+Vector4 Vector4Negate(Vector4 v)
+{
+    Vector4 result = { -v.x, -v.y, -v.z, -v.w };
+    return result;
+}
+
+Vector4 Vector4Scale(Vector4 v, float scale)
+{
+    Vector4 result = { v.x*scale, v.y*scale, v.z*scale, v.w*scale };
     return result;
 }
 
@@ -1834,6 +1876,89 @@ float16 MatrixToFloatV(Matrix mat)
     return result;
 }
 
+void MatrixDecompose(Matrix mat, Vector3 *translation, Quaternion *rotation, Vector3 *scale)
+{
+    float eps = (float)1e-9;
+
+    // Extract Translation
+    translation->x = mat.m12;
+    translation->y = mat.m13;
+    translation->z = mat.m14;
+
+    // Matrix Columns - Rotation will be extracted into here
+    Vector3 matColumns[3] = {{ mat.m0, mat.m4, mat.m8 },
+                             { mat.m1, mat.m5, mat.m9 },
+                             { mat.m2, mat.m6, mat.m10 }};
+
+    // Shear Parameters XY, XZ, and YZ (extract and ignored)
+    float shear[3] = { 0 };
+
+    // Normalized Scale Parameters
+    Vector3 scl = { 0 };
+
+    // Max-Normalizing helps numerical stability
+    float stabilizer = eps;
+    for (int i = 0; i < 3; i++)
+    {
+        stabilizer = fmaxf(stabilizer, fabsf(matColumns[i].x));
+        stabilizer = fmaxf(stabilizer, fabsf(matColumns[i].y));
+        stabilizer = fmaxf(stabilizer, fabsf(matColumns[i].z));
+    }
+    matColumns[0] = Vector3Scale(matColumns[0], 1.0f/stabilizer);
+    matColumns[1] = Vector3Scale(matColumns[1], 1.0f/stabilizer);
+    matColumns[2] = Vector3Scale(matColumns[2], 1.0f/stabilizer);
+
+    // X Scale
+    scl.x = Vector3Length(matColumns[0]);
+    if (scl.x > eps) matColumns[0] = Vector3Scale(matColumns[0], 1.0f/scl.x);
+
+    // Compute XY shear and make col2 orthogonal
+    shear[0] = Vector3DotProduct(matColumns[0], matColumns[1]);
+    matColumns[1] = Vector3Subtract(matColumns[1], Vector3Scale(matColumns[0], shear[0]));
+
+    // Y Scale
+    scl.y = Vector3Length(matColumns[1]);
+    if (scl.y > eps)
+    {
+        matColumns[1] = Vector3Scale(matColumns[1], 1.0f/scl.y);
+        shear[0] /= scl.y; // Correct XY shear
+    }
+
+    // Compute XZ and YZ shears and make col3 orthogonal
+    shear[1] = Vector3DotProduct(matColumns[0], matColumns[2]);
+    matColumns[2] = Vector3Subtract(matColumns[2], Vector3Scale(matColumns[0], shear[1]));
+    shear[2] = Vector3DotProduct(matColumns[1], matColumns[2]);
+    matColumns[2] = Vector3Subtract(matColumns[2], Vector3Scale(matColumns[1], shear[2]));
+
+    // Z Scale
+    scl.z = Vector3Length(matColumns[2]);
+    if (scl.z > eps)
+    {
+        matColumns[2] = Vector3Scale(matColumns[2], 1.0f/scl.z);
+        shear[1] /= scl.z; // Correct XZ shear
+        shear[2] /= scl.z; // Correct YZ shear
+    }
+
+    // matColumns are now orthonormal in O(3). Now ensure its in SO(3) by enforcing det = 1
+    if (Vector3DotProduct(matColumns[0], Vector3CrossProduct(matColumns[1], matColumns[2])) < 0)
+    {
+        scl = Vector3Negate(scl);
+        matColumns[0] = Vector3Negate(matColumns[0]);
+        matColumns[1] = Vector3Negate(matColumns[1]);
+        matColumns[2] = Vector3Negate(matColumns[2]);
+    }
+
+    // Set Scale
+    *scale = Vector3Scale(scl, stabilizer);
+
+    // Extract Rotation
+    Matrix rotationMatrix = { matColumns[0].x, matColumns[0].y, matColumns[0].z, 0,
+                             matColumns[1].x, matColumns[1].y, matColumns[1].z, 0,
+                             matColumns[2].x, matColumns[2].y, matColumns[2].z, 0,
+                             0, 0, 0, 1 };
+    *rotation = QuaternionFromMatrix(rotationMatrix);
+}
+
 //----------------------------------------------------------------------------------
 // Module Functions Definition - Quaternion math
 //----------------------------------------------------------------------------------
@@ -2330,6 +2455,32 @@ int QuaternionEquals(Quaternion p, Quaternion q)
     return result;
 }
 
+// Calculate quaternion cubic spline interpolation using Cubic Hermite Spline algorithm
+// as described in the GLTF 2.0 specification: https://registry.khronos.org/glTF/specs/2.0/glTF-2.0.html#interpolation-cubic
+Quaternion QuaternionCubicHermiteSpline(Quaternion q1, Quaternion outTangent1, Quaternion q2, Quaternion inTangent2, float t)
+{
+    float t2 = t*t;
+    float t3 = t2*t;
+    float h00 = 2*t3 - 3*t2 + 1;
+    float h10 = t3 - 2*t2 + t;
+    float h01 = -2*t3 + 3*t2;
+    float h11 = t3 - t2;
+
+    Quaternion p0 = QuaternionScale(q1, h00);
+    Quaternion m0 = QuaternionScale(outTangent1, h10);
+    Quaternion p1 = QuaternionScale(q2, h01);
+    Quaternion m1 = QuaternionScale(inTangent2, h11);
+
+    Quaternion result = { 0 };
+
+    result = QuaternionAdd(p0, m0);
+    result = QuaternionAdd(result, p1);
+    result = QuaternionAdd(result, m1);
+    result = QuaternionNormalize(result);
+
+    return result;
+}
+
 #endif  // RAYMATH_IMPLEMENTATION
 
 #ifndef RAYMATH_SNAKE_ALIAS_GUARD_
@@ -2401,6 +2552,7 @@ int QuaternionEquals(Quaternion p, Quaternion q)
         #define vec3_rotate_by_quaternion Vector3RotateByQuaternion
         #define vec3_rotate_by_axis_angle Vector3RotateByAxisAngle
         #define vec3_lerp                 Vector3Lerp
+        #define vec3_cubic_hermite        Vector3CubicHermite
         #define vec3_reflect              Vector3Reflect
         #define vec3_min                  Vector3Min
         #define vec3_max                  Vector3Max

@@ -143,7 +143,7 @@ void populate_attributes(Mesh *mesh, cgltf_attribute attribute)
     }
 }
 
-Model load_model_from_gltf_into_memory(const char *file_path)
+Model load_model_gltf_into_memory(const char *file_path)
 {
     Model model = {0};
     String_Builder sb = {0};
@@ -265,19 +265,19 @@ end:
     return model;
 }
 
-Model load_model_from_gltf(const char *file_path)
+Model load_model_gltf(const char *file_path)
 {
-    Model model = load_model_from_gltf_into_memory(file_path);
+    Model model = load_model_gltf_into_memory(file_path);
     load_model_gpu(&model);
     return model;
 }
 
-Bone_Infos load_gltf_bone_info(cgltf_skin skin)
+Bones load_gltf_bones(cgltf_skin skin)
 {
-    Bone_Infos bones = {0};
+    Bones bones = {0};
 
     for (size_t i  = 0; i < skin.joints_count; i++) {
-        Bone_Info bone = {0};
+        Bone bone = {0};
         cgltf_node node = *skin.joints[i];
         if (node.name != NULL) snprintf(bone.name, sizeof(bone.name), "%s", node.name);
 
@@ -299,6 +299,157 @@ Bone_Infos load_gltf_bone_info(cgltf_skin skin)
     return bones;
 }
 
+bool get_pose_at_time_gltf(cgltf_interpolation_type interp_type, cgltf_accessor *input, cgltf_accessor *output, float time, void *data)
+{
+    if (interp_type >= cgltf_interpolation_type_max_enum) return false;
+
+    float t_start = 0.0f;
+    float t_end   = 0.0f;
+    size_t key_frame = 0;
+    bool found = false;
+
+    for (size_t i = 0; i < input->count - 1; i++) {
+        cgltf_bool r1 = cgltf_accessor_read_float(input, i, &t_start, 1);
+        if (!r1) return false;
+        cgltf_bool r2 = cgltf_accessor_read_float(input, i + 1, &t_end, 1);
+        if (!r2) return false;
+
+        if ((t_start <= time) && (time < t_end)) {
+            key_frame = i;
+            found = true;
+            break;
+        }
+    }
+
+    if (!found && input->count >= 2) {
+        key_frame = input->count - 2;
+        float t_first = 0.0f;
+        if (!cgltf_accessor_read_float(input, 0, &t_first, 1)) return false;
+        if (time < t_first) key_frame = 0;
+        if (!cgltf_accessor_read_float(input, key_frame, &t_start, 1)) return false;
+        if (!cgltf_accessor_read_float(input, key_frame + 1, &t_end, 1)) return false;
+    }
+
+    if (FloatEquals(t_end, t_start)) interp_type = cgltf_interpolation_type_step;
+
+    float duration = fmaxf(t_end - t_start, 0.000001f);
+    float t = (time - t_start)/duration;
+    t = (t < 0.0f) ? 0.0f : t;
+    t = (t > 1.0f) ? 1.0f : t;
+
+    if (output->component_type != cgltf_component_type_r_32f) return false;
+
+    if (output->type == cgltf_type_vec3) {
+        switch (interp_type) {
+        case cgltf_interpolation_type_step: {
+            float tmp[3] = { 0.0f };
+            cgltf_accessor_read_float(output, key_frame, tmp, 3);
+            Vector3 v1 = {tmp[0], tmp[1], tmp[2]};
+            Vector3 *r = (Vector3 *)data;
+
+            *r = v1;
+        } break;
+        case cgltf_interpolation_type_linear: {
+            float tmp[3] = { 0.0f };
+            cgltf_accessor_read_float(output, key_frame, tmp, 3);
+            Vector3 v1 = {tmp[0], tmp[1], tmp[2]};
+            cgltf_accessor_read_float(output, key_frame+1, tmp, 3);
+            Vector3 v2 = {tmp[0], tmp[1], tmp[2]};
+            Vector3 *r = (Vector3 *)data;
+
+            *r = Vector3Lerp(v1, v2, t);
+        } break;
+        case cgltf_interpolation_type_cubic_spline: {
+            float tmp[3] = { 0.0f };
+            cgltf_accessor_read_float(output, 3*key_frame+1, tmp, 3);
+            Vector3 v1 = {tmp[0], tmp[1], tmp[2]};
+            cgltf_accessor_read_float(output, 3*key_frame+2, tmp, 3);
+            Vector3 tangent1 = {tmp[0], tmp[1], tmp[2]};
+            cgltf_accessor_read_float(output, 3*(key_frame+1)+1, tmp, 3);
+            Vector3 v2 = {tmp[0], tmp[1], tmp[2]};
+            cgltf_accessor_read_float(output, 3*(key_frame+1), tmp, 3);
+            Vector3 tangent2 = {tmp[0], tmp[1], tmp[2]};
+            Vector3 *r = (Vector3 *)data;
+
+            *r = Vector3CubicHermite(v1, tangent1, v2, tangent2, t);
+        } break;
+        default: break;
+        }
+    } else if (output->type == cgltf_type_vec4) {
+        switch (interp_type) {
+        case cgltf_interpolation_type_step: {
+            float tmp[4] = { 0.0f };
+            cgltf_accessor_read_float(output, key_frame, tmp, 4);
+            Vector4 v1 = {tmp[0], tmp[1], tmp[2], tmp[3]};
+            Vector4 *r = (Vector4 *)data;
+
+            *r = v1;
+        } break;
+        case cgltf_interpolation_type_linear: {
+            float tmp[4] = { 0.0f };
+            cgltf_accessor_read_float(output, key_frame, tmp, 4);
+            Vector4 v1 = {tmp[0], tmp[1], tmp[2], tmp[3]};
+            cgltf_accessor_read_float(output, key_frame+1, tmp, 4);
+            Vector4 v2 = {tmp[0], tmp[1], tmp[2], tmp[3]};
+            Vector4 *r = (Vector4 *)data;
+
+            *r = QuaternionSlerp(v1, v2, t);
+        } break;
+        case cgltf_interpolation_type_cubic_spline: {
+            float tmp[4] = { 0.0f };
+            cgltf_accessor_read_float(output, 3*key_frame+1, tmp, 4);
+            Vector4 v1 = {tmp[0], tmp[1], tmp[2], tmp[3]};
+            cgltf_accessor_read_float(output, 3*key_frame+2, tmp, 4);
+            Vector4 out_tangent_1 = {tmp[0], tmp[1], tmp[2], 0.0f};
+            cgltf_accessor_read_float(output, 3*(key_frame+1)+1, tmp, 4);
+            Vector4 v2 = {tmp[0], tmp[1], tmp[2], tmp[3]};
+            cgltf_accessor_read_float(output, 3*(key_frame+1), tmp, 4);
+            Vector4 in_tangent_2 = {tmp[0], tmp[1], tmp[2], 0.0f};
+            Vector4 *r = (Vector4 *)data;
+
+            v1 = QuaternionNormalize(v1);
+            v2 = QuaternionNormalize(v2);
+
+            if (Vector4DotProduct(v1, v2) < 0.0f)
+            {
+                v2 = Vector4Negate(v2);
+            }
+
+            out_tangent_1 = Vector4Scale(out_tangent_1, duration);
+            in_tangent_2 = Vector4Scale(in_tangent_2, duration);
+
+            *r = QuaternionCubicHermiteSpline(v1, out_tangent_1, v2, in_tangent_2, t);
+        } break;
+        default: break;
+        }
+    }
+
+    return true;
+}
+
+void build_pose_from_parent_joints(Bones bones, Key_Frames key_frames)
+{
+    assert(bones.count <= key_frames.count);
+    for (size_t i = 0; i < bones.count; i++) {
+        Bone bone = bones.items[i];
+        if (bone.parent >= 0) {
+            assert(i < INT_MAX && "bones count was higher than integer max");
+            if (bone.parent > (int)i) {
+                printf("WARNING: skipping bone, not topologically sorted: bone %zu has parent %d\n", i, bone.parent);
+            }
+            Transform *child = &key_frames.items[i];
+            Transform parent = key_frames.items[bone.parent];
+
+            child->rotation = QuaternionMultiply(parent.rotation, child->rotation);
+            child->scale = Vector3Multiply(parent.scale, child->scale);
+            child->translation = Vector3Multiply(child->translation, parent.scale);
+            child->translation = Vector3RotateByQuaternion(child->translation, parent.rotation);
+            child->translation = Vector3Add(child->translation, parent.translation);
+        }
+    }
+
+}
+
 typedef struct {
     cgltf_animation_channel *translate;
     cgltf_animation_channel *rotate;
@@ -307,7 +458,7 @@ typedef struct {
 
 #define GLTF_FRAMERATE 60.0f
 
-Model_Animations load_model_animations_from_gltf(const char *file_path)
+Model_Animations load_model_animations_gltf(const char *file_path)
 {
     Model_Animations animations = {0};
     String_Builder sb = {0};
@@ -357,7 +508,8 @@ Model_Animations load_model_animations_from_gltf(const char *file_path)
 
         for (size_t a = 0; a < data->animations_count; a++) {
             Model_Animation animation = {0};
-            Bone_Infos bones = load_gltf_bone_info(skin);
+            Bones bones = load_gltf_bones(skin);
+            animation.bone_count = bones.count;
 
             cgltf_animation anim_data = data->animations[a];
             Channels *bone_channels = calloc(bones.count, sizeof(Channels));
@@ -389,7 +541,7 @@ Model_Animations load_model_animations_from_gltf(const char *file_path)
                 case cgltf_animation_path_type_max_enum:
                 default:
                     printf("ERROR: invalid channel target path %d\n", channel.target_path);
-                    assert(0);
+                    assert(0); // TODO: at some point switch to ASSERT macro
                 }
 
                 float time = 0.0f;
@@ -406,34 +558,68 @@ Model_Animations load_model_animations_from_gltf(const char *file_path)
 
             size_t key_frame_count = anim_duration*GLTF_FRAMERATE + 1;
             for (size_t j = 0; j < key_frame_count; j++) {
-                Transform key_frame = {0};
                 float time = j/GLTF_FRAMERATE;
 
-                (void)time;
-                TODO("get rid^");
-
                 for (size_t k = 0; k < bones.count; k++) {
-                    Vector3 translation = {skin.joints[k]->translation[0], skin.joints[k]->translation[1], skin.joints[k]->translation[2]};
-                    Quaternion rotation = {skin.joints[k]->rotation[0], skin.joints[k]->rotation[1], skin.joints[k]->rotation[2], skin.joints[k]->rotation[3]};
+                    Vector3 translation = {skin.joints[k]->translation[0],
+                                           skin.joints[k]->translation[1],
+                                           skin.joints[k]->translation[2]};
+                    Quaternion rotation = {skin.joints[k]->rotation[0],
+                                           skin.joints[k]->rotation[1],
+                                           skin.joints[k]->rotation[2],
+                                           skin.joints[k]->rotation[3]};
                     Vector3 scale = {skin.joints[k]->scale[0], skin.joints[k]->scale[1], skin.joints[k]->scale[2]};
-                    (void)translation;
-                    (void)rotation;
-                    (void)scale;
 
-                    TODO("where I left off");
                     if (bone_channels[k].translate) {
-
+                        if (!get_pose_at_time_gltf(bone_channels[k].translate->sampler->interpolation,
+                                                   bone_channels[k].translate->sampler->input,
+                                                   bone_channels[k].translate->sampler->output,
+                                                   time,
+                                                   &translation)) {
+                            printf("ERROR: MODEL %s failed to load translate pose data for bone %s\n", file_path, bones.items[k].name);
+                            assert(0);
+                        }
+                    }
+                    if (bone_channels[k].rotate) {
+                        if (!get_pose_at_time_gltf(bone_channels[k].rotate->sampler->interpolation,
+                                                   bone_channels[k].rotate->sampler->input,
+                                                   bone_channels[k].rotate->sampler->output,
+                                                   time,
+                                                   &translation)) {
+                            printf("ERROR: MODEL %s failed to load rotate pose data for bone %s\n", file_path, bones.items[k].name);
+                            assert(0);
+                        }
+                    }
+                    if (bone_channels[k].scale) {
+                        if (!get_pose_at_time_gltf(bone_channels[k].scale->sampler->interpolation,
+                                                   bone_channels[k].scale->sampler->input,
+                                                   bone_channels[k].scale->sampler->output,
+                                                   time,
+                                                   &translation)) {
+                            printf("ERROR: MODEL %s failed to load scale pose data for bone %s\n", file_path, bones.items[k].name);
+                            assert(0);
+                        }
                     }
 
+                    Matrix S = MatrixScale(scale.x, scale.y, scale.z);
+                    Matrix R = QuaternionToMatrix(rotation);
+                    Matrix T = MatrixTranslate(translation.x, translation.y, translation.z);
+                    Matrix joint_local = MatrixMultiply(MatrixMultiply(S, R), T);
+                    Matrix combined = MatrixMultiply(joint_local, ext_offset[k]);
+                    Transform key_frame;
+                    MatrixDecompose(combined, &key_frame.translation, &key_frame.rotation, &key_frame.scale);
+                    da_append(&animation.key_frames, key_frame);
                 }
 
-
-
-                da_append(&animation.key_frames, key_frame);
+                build_pose_from_parent_joints(bones, animation.key_frames);
             }
 
             da_append(&animations, animation);
+            free(bone_channels);
+            da_free(bones);
         }
+
+        free(ext_offset);
     }
 
 end:

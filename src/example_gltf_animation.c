@@ -5,9 +5,14 @@
 
 int main()
 {
-    init_window(500, 500, "gltf animation");
-    Model robot = load_model_from_gltf(GLTF_MODEL);
+#if 1
+    Model_Animations anims = load_model_animations_gltf(GLTF_MODEL);
+    printf("loaded %zu animations from %s\n", anims.count, GLTF_MODEL);
+    return 0;
 
+#else
+    init_window(500, 500, "gltf animation");
+    Model robot = load_model_gltf(GLTF_MODEL);
 
     Camera camera = {
         .position = {0.0f, 7.0f, 10.0f},
@@ -21,7 +26,6 @@ int main()
             begin_mode_3D(camera); {
                 rotate_y(get_time());
                 draw_model(robot);
-//                draw_shape_3D(SHAPE_3D_CUBE);
             } end_mode_3D();
 
             draw_fps();
@@ -30,6 +34,6 @@ int main()
 
     destroy_model(robot);
     close_window();
-
     return 0;
+#endif
 }
