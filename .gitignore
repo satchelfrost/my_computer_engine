@@ -7,3 +7,7 @@ build
 
 # assets
 sponza
+
+# vim-specific stuff
+.viminfo
+.vimproject
