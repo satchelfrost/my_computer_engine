@@ -2,6 +2,6 @@
 
 - STATUS: OPEN
 - PRIORITY: 100
-- TAGS:
+- TAGS: logging
 
 No description.
