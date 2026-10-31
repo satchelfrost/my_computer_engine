@@ -275,11 +275,13 @@ bool r_init_framebuffers(VkDevice device, Rvk_Swapchain *swapchain, VkRenderPass
 /* default state create info initializers for when you are creating pipelines */
 VkPipelineDepthStencilStateCreateInfo *r_temp_default_depth_stencil_state_ci(void);
 VkPipelineRasterizationStateCreateInfo *r_temp_default_rasterization_state_ci(void);
+VkPipelineRasterizationStateCreateInfo *r_temp_line_rasterization_state_ci(void);
 VkPipelineRasterizationStateCreateInfo *r_temp_default_point_rasterization_state_ci(void);
 VkPipelineRasterizationStateCreateInfo *r_temp_default_line_rasterization_state_ci(void);
 VkPipelineMultisampleStateCreateInfo *r_temp_default_multisample_state_ci(void);
 VkPipelineViewportStateCreateInfo *r_temp_default_viewport_state_ci(VkExtent2D extent);
 VkPipelineInputAssemblyStateCreateInfo *r_temp_default_input_assembly_state_ci(void);
+VkPipelineInputAssemblyStateCreateInfo *r_temp_line_input_assembly_state_ci(void);
 VkPipelineInputAssemblyStateCreateInfo *r_temp_default_point_input_assembly_state_ci(void);
 VkPipelineInputAssemblyStateCreateInfo *r_temp_default_line_input_assembly_state_ci(void);
 VkPipelineVertexInputStateCreateInfo *r_temp_default_primitive_2D_vertex_input_state_ci(void);
@@ -308,8 +310,13 @@ void r_end_tmp_cmd_buff(VkQueue queue, VkDevice device, VkCommandPool pool, VkCo
 
 Rvk_Buffer r_create_vertex_buffer(Rvk_Device device, size_t size, void *data);
 Rvk_Buffer r_create_index_buffer(Rvk_Device device, size_t size, void *data);
+Rvk_Buffer r_create_mapped_staging_buffer(Rvk_Device device, size_t size);
 Rvk_Buffer r_create_mapped_uniform_buffer(Rvk_Device device, size_t size);
-Rvk_Buffer r_create_compute_buffer_from_host(Rvk_Device device, size_t size, void *data);
+Rvk_Buffer r_create_mapped_compute_buffer(Rvk_Device device, size_t size);
+Rvk_Buffer r_create_compute_buffer_with_data(Rvk_Device device, size_t size, void *data);
+Rvk_Buffer r_create_host_visible_buffer_from_existing(Rvk_Device device, Rvk_Buffer device_visible);
+void r_map_buffer(Rvk_Device device, Rvk_Buffer *buffer);
+void r_unmap_buffer(Rvk_Device device, Rvk_Buffer *buffer);
 Rvk_Buffer r_create_compute_buffer(Rvk_Device device, size_t size);
 void r_destroy_rvk_buffer(VkDevice device, Rvk_Buffer buffer);
 bool r_wait_reset_fence(VkDevice device, VkFence *fence);
@@ -330,7 +337,9 @@ typedef struct {
     VkImage image;
 } Rvk_Texture;
 
-Rvk_Texture r_create_texture(Rvk_Device device, VkExtent2D extent, void *data, VkFormat format);
+Rvk_Texture r_create_texture_with_data(Rvk_Device device, VkExtent2D extent, VkFormat format, void *data);
+Rvk_Texture r_create_texture(Rvk_Device device, VkExtent2D extent, VkFormat format);
+void r_copy_buffer_to_image(Rvk_Device device, VkImage image, VkBuffer buffer, VkExtent2D extent);
 void r_destroy_texture(VkDevice device, Rvk_Texture texture);
 
 /***********************************************************************************
@@ -1006,7 +1015,7 @@ VkShaderModule r_create_shader_module(VkDevice device, size_t code_size, const u
 }
 
 VkImage r_create_2D_image(VkDevice device, VkFormat format, VkImageUsageFlags usage, VkExtent2D extent)
-{ // TODO: since this is the simple "r_*" function, I feel like it should also allocate and bind_image_memory
+{
     VkImage image = VK_NULL_HANDLE;
     if (!vk_create_image(device, NULL, &image,
                          .imageType = VK_IMAGE_TYPE_2D,
@@ -1132,6 +1141,18 @@ VkPipelineRasterizationStateCreateInfo *r_temp_default_rasterization_state_ci(vo
     return ci;
 }
 
+VkPipelineRasterizationStateCreateInfo *r_temp_line_rasterization_state_ci(void)
+{
+    VkPipelineRasterizationStateCreateInfo *ci = r_temp_calloc(sizeof(*ci));
+    *ci = (VkPipelineRasterizationStateCreateInfo) {
+        .sType = VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO,
+        .polygonMode = VK_POLYGON_MODE_LINE,
+        .lineWidth = 1.0f,
+        .cullMode = VK_CULL_MODE_NONE,
+    };
+    return ci;
+}
+
 VkPipelineRasterizationStateCreateInfo *r_temp_default_point_rasterization_state_ci(void)
 {
     VkPipelineRasterizationStateCreateInfo *ci = r_temp_calloc(sizeof(*ci));
@@ -1192,6 +1213,16 @@ VkPipelineInputAssemblyStateCreateInfo *r_temp_default_input_assembly_state_ci(v
     *ci = (VkPipelineInputAssemblyStateCreateInfo) {
         .sType = VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO,
         .topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST
+    };
+    return ci;
+}
+
+VkPipelineInputAssemblyStateCreateInfo *r_temp_line_input_assembly_state_ci(void)
+{
+    VkPipelineInputAssemblyStateCreateInfo *ci = r_temp_calloc(sizeof(*ci));
+    *ci = (VkPipelineInputAssemblyStateCreateInfo) {
+        .sType = VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO,
+        .topology = VK_PRIMITIVE_TOPOLOGY_LINE_LIST
     };
     return ci;
 }
@@ -1483,6 +1514,22 @@ Rvk_Buffer r_create_index_buffer(Rvk_Device device, size_t size, void *data)
     return buff;
 }
 
+Rvk_Buffer r_create_mapped_staging_buffer(Rvk_Device device, size_t size)
+{
+    Rvk_Buffer stg_buff = {.info.range = size};
+    RVK_ASSERT(vk_create_buffer(device.logical, NULL, &stg_buff.info.buffer,
+                          .usage = VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
+                          .size = size));
+    RVK_ASSERT((stg_buff.memory = r_allocate_and_bind_buffer_memory(device,
+                                                                    VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT|
+                                                                    VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
+                                                                    stg_buff.info.buffer)));
+    /* copy data to staging buffer */
+    RVK_ASSERT(RVK(vkMapMemory(device.logical, stg_buff.memory, 0, size, 0, &stg_buff.mapped)));
+
+    return stg_buff;
+}
+
 Rvk_Buffer r_create_mapped_uniform_buffer(Rvk_Device device, size_t size)
 {
     if (!device.physical) return (Rvk_Buffer){0};
@@ -1503,7 +1550,7 @@ Rvk_Buffer r_create_mapped_uniform_buffer(Rvk_Device device, size_t size)
     return buff;
 }
 
-Rvk_Buffer r_create_compute_buffer_from_host(Rvk_Device device, size_t size, void *data)
+Rvk_Buffer r_create_compute_buffer_with_data(Rvk_Device device, size_t size, void *data)
 {
     if (!device.physical) return (Rvk_Buffer){0};
     if (!device.logical) return (Rvk_Buffer){0};
@@ -1549,6 +1596,32 @@ Rvk_Buffer r_create_compute_buffer_from_host(Rvk_Device device, size_t size, voi
     return buff;
 }
 
+Rvk_Buffer r_create_host_visible_buffer_from_existing(Rvk_Device device, Rvk_Buffer device_visible)
+{
+    size_t size = device_visible.info.range;
+
+    /* host visible buffer */
+    Rvk_Buffer host_visible = {0};
+    RVK_ASSERT(vk_create_buffer(device.logical, NULL, &host_visible.info.buffer,
+                                .usage = VK_BUFFER_USAGE_TRANSFER_DST_BIT,
+                                .size = size));
+    RVK_ASSERT((host_visible.memory = r_allocate_and_bind_buffer_memory(device,
+                                                                        VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT|
+                                                                        VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
+                                                                        host_visible.info.buffer)));
+
+    /* transfer device visible buffer to host visible */
+    VkCommandBuffer tmp_cmd_buff = r_begin_tmp_cmd_buff(device.command_pool, device.logical);
+        VkBufferCopy copy_region = {.size = size};
+        vkCmdCopyBuffer(tmp_cmd_buff, device_visible.info.buffer, host_visible.info.buffer, 1, &copy_region);
+    r_end_tmp_cmd_buff(device.queue, device.logical, device.command_pool, tmp_cmd_buff);
+
+    /* make it mapped so that we can use it on the CPU */
+    RVK_ASSERT(RVK(vkMapMemory(device.logical, host_visible.memory, 0, size, 0, &host_visible.mapped)));
+
+    return host_visible;
+}
+
 Rvk_Buffer r_create_compute_buffer(Rvk_Device device, size_t size)
 {
     if (!device.physical) return (Rvk_Buffer){0};
@@ -1569,6 +1642,43 @@ Rvk_Buffer r_create_compute_buffer(Rvk_Device device, size_t size)
                                                                 buff.info.buffer)));
 
     return buff;
+}
+
+Rvk_Buffer r_create_mapped_compute_buffer(Rvk_Device device, size_t size)
+{
+    if (!device.physical) return (Rvk_Buffer){0};
+    if (!device.logical) return (Rvk_Buffer){0};
+    if (!device.command_pool) return (Rvk_Buffer){0};
+
+    /* book keeping */
+    Rvk_Buffer buff = {.info.range = size};
+
+    /* create a buffer */
+    if (!vk_create_buffer(device.logical, NULL, &buff.info.buffer,
+                          .usage = VK_BUFFER_USAGE_TRANSFER_DST_BIT|   // destination of staging buffer
+                                   VK_BUFFER_USAGE_TRANSFER_SRC_BIT|   // in case we want to transfer back to host
+                                   VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, // compute buffer (ssbo)
+                          .size = size)) return (Rvk_Buffer){0};
+    RVK_ASSERT((buff.memory = r_allocate_and_bind_buffer_memory(device,
+                                                                VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT|
+                                                                VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
+                                                                buff.info.buffer)));
+    RVK_ASSERT(RVK(vkMapMemory(device.logical, buff.memory, 0, size, 0, &buff.mapped)));
+
+    return buff;
+
+}
+
+void r_map_buffer(Rvk_Device device, Rvk_Buffer *buffer)
+{
+    RVK_ASSERT(buffer->info.range);
+    RVK_ASSERT(RVK(vkMapMemory(device.logical, buffer->memory, 0, buffer->info.range, 0, &buffer->mapped)));
+}
+
+void r_unmap_buffer(Rvk_Device device, Rvk_Buffer *buffer)
+{
+    vkUnmapMemory(device.logical, buffer->memory);
+    buffer->mapped = NULL;
 }
 
 void r_destroy_rvk_buffer(VkDevice device, Rvk_Buffer buffer)
@@ -1810,8 +1920,30 @@ size_t format_to_size(VkFormat fmt)
     }
 }
 
+Rvk_Texture r_create_texture(Rvk_Device device, VkExtent2D extent, VkFormat format)
+{
+    Rvk_Texture texture = {.info.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL};
+    texture.image = r_create_2D_image(device.logical, format,
+                                      VK_IMAGE_USAGE_TRANSFER_DST_BIT|VK_IMAGE_USAGE_SAMPLED_BIT,
+                                      extent);
+    texture.memory = r_allocate_and_bind_image_memory(device,
+                                                      VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
+                                                      texture.image);
+    vk_create_image_view(device.logical, NULL, &texture.info.imageView,
+                         .image = texture.image,
+                         .viewType = VK_IMAGE_VIEW_TYPE_2D,
+                         .format = format,
+                         .subresourceRange = {
+                             .aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
+                             .levelCount = 1, .layerCount = 1,});
+    vk_create_sampler(device.logical, NULL, &texture.info.sampler,
+                      .compareOp = VK_COMPARE_OP_ALWAYS,
+                      .borderColor = VK_BORDER_COLOR_INT_OPAQUE_BLACK);
+    return texture;
+}
+
 // format e.g.: VK_FORMAT_R8G8B8A8_UNORM
-Rvk_Texture r_create_texture(Rvk_Device device, VkExtent2D extent, void *data, VkFormat format)
+Rvk_Texture r_create_texture_with_data(Rvk_Device device, VkExtent2D extent, VkFormat format, void *data)
 {
     Rvk_Texture texture = {0};
 
@@ -1874,6 +2006,17 @@ Rvk_Texture r_create_texture(Rvk_Device device, VkExtent2D extent, void *data, V
 
 defer:
     return texture;
+}
+
+void r_copy_buffer_to_image(Rvk_Device device, VkImage image, VkBuffer buffer, VkExtent2D extent)
+{
+    VkCommandBuffer cmd_buff = r_begin_tmp_cmd_buff(device.command_pool, device.logical);
+        VkBufferImageCopy copy_region = {
+            .imageSubresource = { .aspectMask = VK_IMAGE_ASPECT_COLOR_BIT, .layerCount = 1, },
+            .imageExtent = {extent.width, extent.height, 1},
+        };
+        vkCmdCopyBufferToImage(cmd_buff, buffer, image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &copy_region);
+    r_end_tmp_cmd_buff(device.queue, device.logical, device.command_pool, cmd_buff);
 }
 
 void r_destroy_texture(VkDevice device, Rvk_Texture texture)

@@ -80,6 +80,7 @@ enum {
     PIPELINE_DRAW_MODEL,
     PIPELINE_TEXT,
     PIPELINE_PRIMITIVE_2D,
+    PIPELINE_PRIMITIVE_2D_TEXTURE,
     PIPELINE_COUNT,
 };
 
@@ -199,6 +200,7 @@ static void mouse_scroll_callback(GLFWwindow *window, double x_offset, double y_
 void init_standard_rendering();
 void resolve_image();
 
+// TODO: returning true really doesn't make sense, either a window is created or not
 bool init_window(int width, int height, char *title)
 {
     /* initialize glfw and window */
@@ -1029,7 +1031,7 @@ void draw_text_at_base_ex(Font font, const char *text, size_t text_len, int x, i
                                          .pSetLayouts = &standard.ds_layouts[DS_LAYOUT_TEXT])) return;
 
         VkExtent2D extent = {.width = font.bitmap_width, .height = font.bitmap_height};
-        standard.text.bitmap = r_create_texture(vk_ctx.device, extent, font.bitmap, VK_FORMAT_R8_UNORM);
+        standard.text.bitmap = r_create_texture_with_data(vk_ctx.device, extent, VK_FORMAT_R8_UNORM, font.bitmap);
         assert(standard.text.ds);
         VkWriteDescriptorSet write = {
             .sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
@@ -1147,13 +1149,14 @@ void destroy_pipeline(Rvk_Pipeline pipeline)
     vkDestroyPipelineLayout(vk_ctx.device.logical, pipeline.layout, NULL);
 }
 
-void init_standard_rendering()
+Rvk_Buffer create_compute_buffer(size_t size)
 {
+    return r_create_compute_buffer(vk_ctx.device, size);
 }
 
-Rvk_Buffer create_compute_buffer(size_t size, void *data)
+Rvk_Buffer create_compute_buffer_with_data(size_t size, void *data)
 {
-    return r_create_compute_buffer_from_host(vk_ctx.device, size, data);
+    return r_create_compute_buffer_with_data(vk_ctx.device, size, data);
 }
 
 void destroy_buffer(Rvk_Buffer buff)
@@ -1416,7 +1419,7 @@ void init_draw_model_pipeline()
         .size = sizeof(standard.draw_model.push_const)
     };
 
-    if (!standard.ds_layouts[DS_LAYOUT_DRAW_MODEL]) init_draw_model_ds_layout();
+    if (!standard.ds_layouts[DS_LAYOUT_DRAW_MODEL]) init_draw_model_ds_layout(); // TODO: be more explicit with VK_NULL_HANDLE
     vk_create_pipeline_layout(vk_ctx.device.logical, NULL, &layout,
                               .pushConstantRangeCount = 1,
                               .pPushConstantRanges = &pc_range,
@@ -1484,16 +1487,16 @@ void destroy_model(Model model)
 void load_model_gpu(Model *model)
 {
     /* create phony attribute buffer and phony texture */
-    model->phony.buffer  = create_compute_buffer(sizeof(model->phony.data), &model->phony.data);
-    model->phony.image   = (Creese_Image){.width = 1, .height = 1, .data = &model->phony.data, };
-    model->phony.texture = create_texture(model->phony.image);
+    model->phony.buffer  = create_compute_buffer_with_data(sizeof(model->phony.data), &model->phony.data);
+    model->phony.image   = (Image){.width = 1, .height = 1, .data = &model->phony.data, };
+    model->phony.texture = create_texture_from_image(model->phony.image);
 
     /* initialize uniform buffer if it's not already */
     if (!standard.draw_model.uniform.buffer.info.buffer) init_draw_model_uniform();
 
     /* create textures */
     for (size_t i = 0; i < model->images.count; i++) {
-        Rvk_Texture texture = create_texture(model->images.items[i]);
+        Rvk_Texture texture = create_texture_from_image(model->images.items[i]);
         da_append(&model->textures, texture);
     }
 
@@ -1512,42 +1515,42 @@ void load_model_gpu(Model *model)
         size = mesh->cpu.normals.count*sizeof(*mesh->cpu.normals.items);
         if (size) {
             assert(mesh->gpu.normal.info.buffer == NULL);
-            mesh->gpu.normal = create_compute_buffer(size, mesh->cpu.normals.items);
+            mesh->gpu.normal = create_compute_buffer_with_data(size, mesh->cpu.normals.items);
             mesh->gpu.mask |= 1<<ATTRIBUTE_NORMAL;
         } else mesh->gpu.normal = model->phony.buffer;
 
         size = mesh->cpu.uvs.count*sizeof(*mesh->cpu.uvs.items);
         if (size) {
             assert(mesh->gpu.uv.info.buffer == NULL);
-            mesh->gpu.uv = create_compute_buffer(size, mesh->cpu.uvs.items);
+            mesh->gpu.uv = create_compute_buffer_with_data(size, mesh->cpu.uvs.items);
             mesh->gpu.mask |= 1<<ATTRIBUTE_UV;
         } else mesh->gpu.uv = model->phony.buffer;
 
         size = mesh->cpu.colors.count*sizeof(*mesh->cpu.colors.items);
         if (size) {
             assert(mesh->gpu.color.info.buffer == NULL);
-            mesh->gpu.color = create_compute_buffer(size, mesh->cpu.colors.items);
+            mesh->gpu.color = create_compute_buffer_with_data(size, mesh->cpu.colors.items);
             mesh->gpu.mask |= 1<<ATTRIBUTE_COLOR;
         } else mesh->gpu.color = model->phony.buffer;
 
         size = mesh->cpu.tangets.count*sizeof(*mesh->cpu.tangets.items);
         if (size) {
             assert(mesh->gpu.tanget.info.buffer == NULL);
-            mesh->gpu.tanget = create_compute_buffer(size, mesh->cpu.tangets.items);
+            mesh->gpu.tanget = create_compute_buffer_with_data(size, mesh->cpu.tangets.items);
             mesh->gpu.mask |= 1<<ATTRIBUTE_TANGET;
         } else mesh->gpu.tanget = model->phony.buffer;
 
         size = mesh->cpu.joints.count*sizeof(*mesh->cpu.joints.items);
         if (size) {
             assert(mesh->gpu.joint.info.buffer == NULL);
-            mesh->gpu.joint = create_compute_buffer(size, mesh->cpu.joints.items);
+            mesh->gpu.joint = create_compute_buffer_with_data(size, mesh->cpu.joints.items);
             mesh->gpu.mask |= 1<<ATTRIBUTE_JOINT;
         } else mesh->gpu.joint = model->phony.buffer;
 
         size = mesh->cpu.weights.count*sizeof(*mesh->cpu.weights.items);
         if (size) {
             assert(mesh->gpu.weight.info.buffer == NULL);
-            mesh->gpu.weight = create_compute_buffer(size, mesh->cpu.weights.items);
+            mesh->gpu.weight = create_compute_buffer_with_data(size, mesh->cpu.weights.items);
             mesh->gpu.mask |= 1<<ATTRIBUTE_WEIGHT;
         } else mesh->gpu.weight = model->phony.buffer;
 
@@ -1731,9 +1734,9 @@ void draw_mesh(Mesh mesh)
     vkCmdDrawIndexed(cb, mesh.cpu.indices.count, 1, 0, 0, 0);
 }
 
-Creese_Image create_image(const char *file_name)
+Image create_image(const char *file_name)
 {
-    Creese_Image img = {0};
+    Image img = {0};
     int channels;
     img.data = stbi_load(file_name, &img.width, &img.height, &channels, STBI_rgb_alpha);
     if (!img.data) printf("ERROR: failed to load image %s\n", file_name);
@@ -1745,18 +1748,69 @@ void disable_render_pass()
     standard.options.disable_render_pass = true;
 }
 
-Rvk_Texture create_texture(Creese_Image img)
+Rvk_Texture create_texture_from_image(Image image)
 {
     VkFormat format = 0;
-    VkExtent2D extent = {img.width, img.height};
+    VkExtent2D extent = {image.width, image.height};
 
-    switch (img.type) {
+    switch (image.type) {
     case IMAGE_TYPE_UNORM: format = VK_FORMAT_R8G8B8A8_UNORM; break;
     case IMAGE_TYPE_SRGB:  format = VK_FORMAT_R8G8B8A8_SRGB;  break;
     default:               format = VK_FORMAT_R8G8B8A8_SRGB;  break;
     }
 
-    return r_create_texture(vk_ctx.device, extent, img.data, format);
+    return r_create_texture_with_data(vk_ctx.device, extent, format, image.data);
+}
+
+Rvk_Texture create_texture(int width, int height, VkFormat format)
+{
+    assert(width > 0 && height > 0);
+    VkExtent2D extent = {width, height};
+    return r_create_texture(vk_ctx.device, extent, format);
+}
+
+Rvk_Texture create_texture_with_data(int width, int height, VkFormat format, void *data)
+{
+    assert(width > 0 && height > 0);
+    VkExtent2D extent = {width, height};
+    return r_create_texture_with_data(vk_ctx.device, extent, format, data);
+}
+
+VkDescriptorSet create_primitive_2D_texture_ds(Rvk_Texture texture)
+{
+    VkDescriptorSet ds = VK_NULL_HANDLE;
+
+    if (standard.pipelines[PIPELINE_PRIMITIVE_2D_TEXTURE].handle == VK_NULL_HANDLE)
+        init_primitive_2D_texture_pipeline();
+
+    assert(standard.ds_layouts[DS_LAYOUT_PRIMITIVE_2D_TEXTURE] != VK_NULL_HANDLE);
+    assert(standard.frame_buffers[0].info.buffer != VK_NULL_HANDLE);
+    vk_allocate_descriptor_sets(vk_ctx.device.logical, &ds,
+                                .descriptorPool = vk_ctx.pool,
+                                .descriptorSetCount = 1,
+                                .pSetLayouts = &standard.ds_layouts[DS_LAYOUT_PRIMITIVE_2D_TEXTURE]);
+    assert(ds != VK_NULL_HANDLE);
+    VkWriteDescriptorSet writes[] = {
+        {
+            .sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
+            .dstBinding = 0,
+            .descriptorCount = 1,
+            .descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,
+            .dstSet = ds,
+            .pBufferInfo = &standard.frame_buffers[0].info,
+        },
+        {
+            .sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
+            .dstBinding = 1,
+            .descriptorCount = 1,
+            .descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
+            .dstSet = ds,
+            .pImageInfo = &texture.info,
+        },
+    };
+    vkUpdateDescriptorSets(vk_ctx.device.logical, ARRAY_LEN(writes), writes, 0, NULL);
+
+    return ds;
 }
 
 void init_standard_3D_shapes()
@@ -1894,6 +1948,54 @@ void draw_rectangle_rounded(int x, int y, int width, int height, int radius, Col
 void draw_rectangle(int x, int y, int width, int height, Color color)
 {
     draw_rectangle_rounded(x, y, width, height, 0, color);
+}
+
+void draw_rectangle_rounded_texture(VkDescriptorSet ds, int x, int y, int width, int height, int radius)
+{
+//    int win_width = window.resolution_width;
+//    int win_height = window.resolution_height;
+//    if (width <= 0)     return;
+//    if (height <= 0)    return;
+//    if (x > win_width)  return;
+//    if (y > win_height) return;
+//    if (x + width < 0)  return;
+//    if (y + height < 0) return;
+//    // x = (x < 0) ? 0 : x;
+//    // y = (y < 0) ? 0 : y;
+//    // width  = (x + width > win_width)   ? (x + width - win_width ) : width;
+//    // height = (y + height > win_height) ? (y + height - win_height) : height;
+//
+//    assert(ds != VK_NULL_HANDLE);
+//    if (!standard.primitive_2D_texture.pl.handle) {
+//        init_primitive_2D_texture_pipeline();
+//    }
+//
+//    VkCommandBuffer cb = get_command_buffer();
+//
+//    standard.primitive_2D_texture.push_const.shape        = SHAPE_2D_RECTANGLE;
+//    standard.primitive_2D_texture.push_const.x            = x;
+//    standard.primitive_2D_texture.push_const.y            = y;
+//    standard.primitive_2D_texture.push_const.width        = width;
+//    standard.primitive_2D_texture.push_const.height       = height;
+//    standard.primitive_2D_texture.push_const.radius       = radius;
+//    standard.primitive_2D_texture.push_const.color        = color_to_uint32_t(color);
+//    standard.primitive_2D_texture.push_const.frame_width  = window.resolution_width;
+//    standard.primitive_2D_texture.push_const.frame_height = window.resolution_height;
+//
+//    vkCmdBindPipeline(cb, VK_PIPELINE_BIND_POINT_COMPUTE, standard.primitive_2D_texture.pl.handle);
+//    vkCmdPushConstants(cb, standard.primitive_2D_texture.pl.layout, VK_SHADER_STAGE_COMPUTE_BIT,
+//                       0, sizeof(standard.primitive_2D_texture.push_const), &standard.primitive_2D_texture.push_const);
+//    vkCmdBindDescriptorSets(cb, VK_PIPELINE_BIND_POINT_COMPUTE, standard.primitive_2D_texture.pl.layout, 0,
+//                            1, &ds, 0, NULL);
+//
+//    size_t group_x, group_y, group_z;
+//    group_x = ceil(width/DEFAULT_IMAGE_WORKGROUP_SIZE);
+//    group_y = ceil(height/DEFAULT_IMAGE_WORKGROUP_SIZE);
+//    group_z = 1;
+//    vkCmdDispatch(cb, group_x, group_y, group_z);
+//
+//    // block writes to frame buffer until this is finished rendering
+//    comp_to_comp_buff_barrier(standard.frame_buffers[0].info.buffer);
 }
 
 void draw_circle(int x, int y, int radius, Color color)

@@ -252,7 +252,7 @@ Model load_model_gltf_into_memory(const char *file_path)
     size_t checkpoint = temp_save(); {
         for (size_t i = 0; i < data->images_count; i++) {
             const char *image_path = temp_sprintf(SV_Fmt"%s", SV_Arg(path_prefix), data->images[i].uri);
-            Creese_Image image = create_image(image_path);
+            Image image = create_image(image_path);
             image.type = model.images.items[i].type;
             da_append(&model.images, image);
         }

@@ -11,6 +11,9 @@
 #define NOB_STRIP_PREFIX
 #include "../../nob.h"
 
+/////////////////////////////////////////////
+/* Color */
+/////////////////////////////////////////////
 #define LIGHTGRAY  (Color){ 200, 200, 200, 255 }
 #define GRAY       (Color){ 130, 130, 130, 255 }
 #define DARKGRAY   (Color){ 80, 80, 80, 255 }
@@ -39,11 +42,11 @@
 
 typedef struct {
     Vector3 min, max;
-} AABB;
+} AABB; // TODO: what uses this?
 
 typedef struct {
     Vector2 min, max;
-} AABB_2D;
+} AABB_2D; // TODO: what uses this?
 
 typedef struct Color {
     unsigned char r;
@@ -52,11 +55,18 @@ typedef struct Color {
     unsigned char a;
 } Color;
 
+uint32_t color_to_uint32_t(Color color);
+Color uint32_t_to_color(uint32_t rgba);
+Color color_from_hsv(float hue, float saturation, float value);
+
 typedef struct {
     float x, y, z;
     uint32_t color;
-} Point;
+} Point; // TODO: what uses this?
 
+/////////////////////////////////////////////
+/* input structure */
+/////////////////////////////////////////////
 typedef enum {
     KEY_NULL            = 0,
     KEY_APOSTROPHE      = 39,
@@ -210,6 +220,9 @@ typedef enum {
     GAMEPAD_AXIS_RIGHT_TRIGGER = 5
 } Gamepad_Axis;
 
+/////////////////////////////////////////////
+/* window */
+/////////////////////////////////////////////
 typedef struct {
     uint32_t width, height;
     GLFWwindow *window;
@@ -219,18 +232,22 @@ bool init_window(int width, int height, char *title);
 void close_window();
 bool window_should_close();
 Window get_window();
-void poll_input_events(); // called by end_drawing
+void begin_drawing(Color color);
+void end_drawing();
+void begin_render_pass(Color color);
+void end_render_pass();
+
+/////////////////////////////////////////////
+/* time */
+/////////////////////////////////////////////
 void begin_timer();
 void end_timer();
 double get_time();
 double get_frame_time();
 
-void begin_drawing(Color color);
-void end_drawing();
-void begin_render_pass(Color color);
-void end_render_pass();
-void bind_graphics_pipeline(VkPipeline pl);
-
+/////////////////////////////////////////////
+/* camera */
+/////////////////////////////////////////////
 typedef struct {
     Vector3 position;
     Vector3 target;
@@ -242,6 +259,9 @@ void begin_mode_3D(Camera camera);
 void end_mode_3D();
 void update_camera_free(Camera *camera);
 
+/////////////////////////////////////////////
+/* vulkan */
+/////////////////////////////////////////////
 typedef struct {
     Rvk_Device device;
     Rvk_Swapchain swapchain;
@@ -268,7 +288,13 @@ typedef struct {
 
 Frame_Context get_frame_context();
 VkFramebuffer get_current_frame_buffer();
+VkCommandBuffer get_command_buffer();
+void set_viewport_scissor();
+void wait_idle();
 
+/////////////////////////////////////////////
+/* matrix */
+/////////////////////////////////////////////
 void push_matrix();
 void pop_matrix();
 void scale(float x, float y, float z);
@@ -281,19 +307,25 @@ Matrix get_mvp();
 void matrix_cat(Matrix m);
 void rotate_y(float angle);
 
-VkCommandBuffer get_current_cmd_buff(); // should deprecate this
-VkCommandBuffer get_command_buffer();   // does the same thing
-void set_viewport_scissor();
-void wait_idle();
-bool is_key_pressed(int key);
-bool is_key_down(int key);
+/////////////////////////////////////////////
+/* profile */
+/////////////////////////////////////////////
 void log_fps();
 int get_fps();
 int get_avg_fps();
 float get_avg_frame_time();
-bool is_gamepad_button_pressed(int button);
 
-/* Text */
+/////////////////////////////////////////////
+/* input */
+/////////////////////////////////////////////
+bool is_key_pressed(int key);
+bool is_key_down(int key);
+bool is_gamepad_button_pressed(int button);
+void poll_input_events(); // called by end_drawing
+
+/////////////////////////////////////////////
+/* text */
+/////////////////////////////////////////////
 #define CHAR_COUNT 96
 #define FIRST_CHAR 32
 
@@ -316,10 +348,11 @@ void draw_text_at_base(const char *text, size_t text_len, int x, int y, Color co
 void draw_text_at_base_ex(Font font, const char *text, size_t text_len, int x, int y, Color color);
 int measure_text(const char *text, size_t text_len);
 int measure_text_ex(Font font, const char *text, size_t text_len);
-uint32_t color_to_uint32_t(Color color);
-Color uint32_t_to_color(uint32_t rgba);
-Color color_from_hsv(float hue, float saturation, float value);
+void draw_fps();
 
+/////////////////////////////////////////////
+/* 3D Model/Animation structures */
+/////////////////////////////////////////////
 typedef enum {
     ATTRIBUTE_NORMAL,
     ATTRIBUTE_UV,
@@ -375,13 +408,13 @@ typedef struct {
 typedef enum {
     IMAGE_TYPE_UNORM,
     IMAGE_TYPE_SRGB,
-} Creese_Image_Type;
+} Image_Type;
 
 typedef struct {
-    Creese_Image_Type type;
+    Image_Type type;
     int width, height;
     void *data;
-} Creese_Image;
+} Image;
 
 typedef struct {
     Vector3 translation;
@@ -404,8 +437,8 @@ typedef struct {
 typedef struct {
     struct { Mesh         *items; size_t count; size_t capacity; } meshes;
     struct { Rvk_Texture  *items; size_t count; size_t capacity; } textures;
-    struct { Creese_Image *items; size_t count; size_t capacity; } images;
-    struct { Rvk_Texture texture; Rvk_Buffer buffer; Creese_Image image; uint32_t data; } phony;
+    struct { Image *items; size_t count; size_t capacity; } images;
+    struct { Rvk_Texture texture; Rvk_Buffer buffer; Image image; uint32_t data; } phony;
 
     Model_Skeleton skeleton;     // TODO: unimplemented
     Transform current_transform; // TODO: unimplemented
@@ -426,17 +459,18 @@ typedef struct {
 
 typedef struct { Model_Animation *items; size_t count; size_t capacity; } Model_Animations;
 
-/* obj */
+/////////////////////////////////////////////
+/* 3D Model */
+/////////////////////////////////////////////
 Model load_model_obj(const char *file_path);
 Model load_model_obj_into_memory(const char *file_path);
-
-/* gltf */
 Model load_model_gltf(const char *file_path);
 Model load_model_gltf_into_memory(const char *file_path);
 Model_Animations load_model_animations_gltf(const char *file_path);
-
-Creese_Image create_image(const char *file_path);
-Rvk_Texture create_texture(Creese_Image img);
+void load_model_gpu(Model *model);
+void destroy_model(Model model);
+void draw_model(Model model);
+void draw_mesh(Mesh mesh);
 
 typedef enum {
     SHAPE_3D_CUBE,
@@ -446,14 +480,21 @@ typedef enum {
     SHAPE_3D_COUNT,
 } Shape_3D;
 
-void draw_fps();
 void draw_shape_3D(Shape_3D shape);
-void load_model_gpu(Model *model);
-void destroy_model(Model model);
-void draw_model(Model model);
-void draw_mesh(Mesh mesh);
-void draw_default_cube();
 
+/////////////////////////////////////////////
+/* texture */
+/////////////////////////////////////////////
+Image create_image(const char *file_path);
+Rvk_Texture create_texture_from_image(Image image);
+Rvk_Texture create_texture(int width, int height, VkFormat format);
+Rvk_Texture create_texture_with_data(int width, int height, VkFormat format, void *data);
+void destroy_texture(Rvk_Texture texture);
+VkDescriptorSet create_primitive_2D_texture_ds(Rvk_Texture texture);
+
+/////////////////////////////////////////////
+/* 2D drawing basics */
+/////////////////////////////////////////////
 typedef enum {
     SHAPE_2D_CIRCLE,
     SHAPE_2D_RECTANGLE,
@@ -463,20 +504,33 @@ typedef enum {
 
 void draw_rectangle(int x, int y, int width, int height, Color color);
 void draw_rectangle_rounded(int x, int y, int width, int height, int radius, Color color);
+void draw_rectangle_rounded_texture(VkDescriptorSet ds, int x, int y, int width, int height, int radius);
 void draw_circle(int x, int y, int radius, Color color);
-Rvk_Buffer create_compute_buffer(size_t size, void *data);
+
+/////////////////////////////////////////////
+/* buffer */
+/////////////////////////////////////////////
 Rvk_Buffer create_vertex_buffer(size_t size, void *vertices);
 Rvk_Buffer create_index_buffer(size_t size, void *indices);
+//Rvk_Buffer create_mapped_staging_buffer(size_t size); // TODO
+//Rvk_Buffer create_mapped_compute_buffer(size_t size); // TODO
+//Rvk_Buffer create_mapped_uniform_buffer(size_t size); // TODO
+Rvk_Buffer create_compute_buffer(size_t size);
+Rvk_Buffer create_compute_buffer_with_data(size_t size, void *data);
 void destroy_buffer(Rvk_Buffer buff);
 
-void destroy_texture(Rvk_Texture texture);
-
+/////////////////////////////////////////////
+/* shader general */
+/////////////////////////////////////////////
 VkPipelineShaderStageCreateInfo load_compute_shader(const char *file_path, String_Builder *sb);
 void unload_shader(VkPipelineShaderStageCreateInfo ci);
 
+/////////////////////////////////////////////
+/* pipeline general */
+/////////////////////////////////////////////
 Rvk_Pipeline create_triangle_rvk_pipeline(const char *vert_shader, const char *frag_shader, VkPipelineLayout layout, VkPipelineVertexInputStateCreateInfo vert_input);
 Rvk_Pipeline create_triangle_blend_rvk_pipeline(const char *vert_shader, const char *frag_shader, VkPipelineLayout layout, VkPipelineVertexInputStateCreateInfo vert_input);
 void destroy_pipeline(Rvk_Pipeline pipeline);
-
+void bind_graphics_pipeline(VkPipeline pl); // TODO: where is this used?
 
 #endif // MY_COMPUTER_H_
