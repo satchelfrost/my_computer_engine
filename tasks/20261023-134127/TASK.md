@@ -1,6 +1,6 @@
 # Textured 2D rectangle
 
-- STATUS: OPEN
+- STATUS: CLOSED
 - PRIORITY: 100
 - TAGS: ui,shapes
 

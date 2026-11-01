@@ -244,6 +244,11 @@ void begin_timer();
 void end_timer();
 double get_time();
 double get_frame_time();
+void set_target_fps(int fps);
+void log_fps();
+int get_fps();
+int get_avg_fps();
+float get_avg_frame_time();
 
 /////////////////////////////////////////////
 /* camera */
@@ -308,14 +313,6 @@ void matrix_cat(Matrix m);
 void rotate_y(float angle);
 
 /////////////////////////////////////////////
-/* profile */
-/////////////////////////////////////////////
-void log_fps();
-int get_fps();
-int get_avg_fps();
-float get_avg_frame_time();
-
-/////////////////////////////////////////////
 /* input */
 /////////////////////////////////////////////
 bool is_key_pressed(int key);
@@ -349,6 +346,51 @@ void draw_text_at_base_ex(Font font, const char *text, size_t text_len, int x, i
 int measure_text(const char *text, size_t text_len);
 int measure_text_ex(Font font, const char *text, size_t text_len);
 void draw_fps();
+
+/////////////////////////////////////////////
+/* texture */
+/////////////////////////////////////////////
+typedef enum {
+    IMAGE_TYPE_UNORM,
+    IMAGE_TYPE_SRGB,
+} Image_Type;
+
+typedef struct {
+    Image_Type type;
+    int width, height;
+    void *data;
+} Image;
+
+Image load_image(const char *file_path);
+
+typedef struct {
+    Rvk_Texture texture;
+    VkDescriptorSet ds;
+    int width, height;
+} Texture_2D;
+
+Texture_2D load_texture(const char *file_name);
+void unload_texture(Texture_2D texture);
+Rvk_Texture load_rvk_texture_from_image(Image image);
+Rvk_Texture load_rvk_texture(int width, int height, VkFormat format);
+Rvk_Texture load_rvk_texture_with_data(int width, int height, VkFormat format, void *data);
+void destroy_rvk_texture(Rvk_Texture texture);
+VkDescriptorSet create_primitive_2D_texture_ds(Rvk_Texture texture);
+
+/////////////////////////////////////////////
+/* 2D drawing basics */
+/////////////////////////////////////////////
+typedef enum {
+    SHAPE_2D_CIRCLE,
+    SHAPE_2D_RECTANGLE,
+    SHAPE_2D_RECTANGLE_ROUNDED,
+    SHAPE_2D_COUNT,
+} Shape_2D;
+
+void draw_rectangle(int x, int y, int width, int height, Color color);
+void draw_rectangle_rounded(int x, int y, int width, int height, int radius, Color color);
+void draw_rectangle_rounded_texture(Texture_2D texture, int x, int y, int width, int height, int radius);
+void draw_circle(int x, int y, int radius, Color color);
 
 /////////////////////////////////////////////
 /* 3D Model/Animation structures */
@@ -404,17 +446,6 @@ typedef struct {
         VkDescriptorSet ds;
     } gpu;
 } Mesh;
-
-typedef enum {
-    IMAGE_TYPE_UNORM,
-    IMAGE_TYPE_SRGB,
-} Image_Type;
-
-typedef struct {
-    Image_Type type;
-    int width, height;
-    void *data;
-} Image;
 
 typedef struct {
     Vector3 translation;
@@ -482,30 +513,6 @@ typedef enum {
 
 void draw_shape_3D(Shape_3D shape);
 
-/////////////////////////////////////////////
-/* texture */
-/////////////////////////////////////////////
-Image create_image(const char *file_path);
-Rvk_Texture create_texture_from_image(Image image);
-Rvk_Texture create_texture(int width, int height, VkFormat format);
-Rvk_Texture create_texture_with_data(int width, int height, VkFormat format, void *data);
-void destroy_texture(Rvk_Texture texture);
-VkDescriptorSet create_primitive_2D_texture_ds(Rvk_Texture texture);
-
-/////////////////////////////////////////////
-/* 2D drawing basics */
-/////////////////////////////////////////////
-typedef enum {
-    SHAPE_2D_CIRCLE,
-    SHAPE_2D_RECTANGLE,
-    SHAPE_2D_RECTANGLE_ROUNDED,
-    SHAPE_2D_COUNT,
-} Shape_2D;
-
-void draw_rectangle(int x, int y, int width, int height, Color color);
-void draw_rectangle_rounded(int x, int y, int width, int height, int radius, Color color);
-void draw_rectangle_rounded_texture(VkDescriptorSet ds, int x, int y, int width, int height, int radius);
-void draw_circle(int x, int y, int radius, Color color);
 
 /////////////////////////////////////////////
 /* buffer */

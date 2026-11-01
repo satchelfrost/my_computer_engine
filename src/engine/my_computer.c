@@ -70,19 +70,20 @@ static struct {
 
 static Camera current_camera = {0};
 
-enum {
+typedef enum {
     DS_LAYOUT_DRAW_MODEL,
     DS_LAYOUT_TEXT,
+    DS_LAYOUT_PRIMITIVE_2D_TEXTURE,
     DS_LAYOUT_COUNT,
-};
+} Descriptor_Set_Name;
 
-enum {
+typedef enum {
     PIPELINE_DRAW_MODEL,
     PIPELINE_TEXT,
     PIPELINE_PRIMITIVE_2D,
     PIPELINE_PRIMITIVE_2D_TEXTURE,
     PIPELINE_COUNT,
-};
+} Pipeline_Name;
 
 enum {
     EYE_LEFT,
@@ -141,6 +142,18 @@ static struct {
             uint32_t color;
         } push_const;
     } primitive_2D;
+
+    struct {
+        struct {
+            int x;
+            int y;
+            int width;
+            int height;
+            int radius;
+            uint32_t window_width;
+            uint32_t window_height;
+        } push_const;
+    } primitive_2D_texture;
 
     Model shapes_3D;
 
@@ -271,7 +284,7 @@ void close_window()
     vkQueueWaitIdle(vk_ctx.device.queue);
 
     unload_font(standard.text.default_font);
-    destroy_texture(standard.text.bitmap);
+    destroy_rvk_texture(standard.text.bitmap);
     destroy_buffer(standard.draw_model.uniform.buffer);
 
     for (size_t i = 0; i < PIPELINE_COUNT; i++)
@@ -972,41 +985,7 @@ void unload_font(Font font)
     free(font.bitmap);
 }
 
-void create_text_pipeline()
-{
-    VkPipelineLayout layout = VK_NULL_HANDLE;
-    Vulkan_Context vk_ctx = get_vulkan_context();
-    VkPushConstantRange pc_range = {
-        .stageFlags = VK_SHADER_STAGE_VERTEX_BIT|VK_SHADER_STAGE_FRAGMENT_BIT,
-        .size = sizeof(standard.text.push_const)
-    };
-
-    /* standard text ds_layout */
-    VkDescriptorSetLayoutBinding text_bindings[] = {
-        {
-            .binding         = 0,
-            .descriptorCount = 1,
-            .descriptorType  = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
-            .stageFlags      = VK_SHADER_STAGE_FRAGMENT_BIT,
-        }
-    };
-    vk_create_descriptor_set_layout(vk_ctx.device.logical, NULL, &standard.ds_layouts[DS_LAYOUT_TEXT],
-                                    .pBindings = text_bindings,
-                                    .bindingCount = ARRAY_LEN(text_bindings));
-
-    vk_create_pipeline_layout(vk_ctx.device.logical, NULL, &layout,
-                              .pushConstantRangeCount = 1,
-                              .pPushConstantRanges = &pc_range,
-                              .setLayoutCount = 1,
-                              .pSetLayouts = &standard.ds_layouts[DS_LAYOUT_TEXT]);
-
-    VkPipelineVertexInputStateCreateInfo empty_vertex_input_ci = {0};
-
-    standard.pipelines[PIPELINE_TEXT] = create_triangle_blend_rvk_pipeline("shaders/text.vert.glsl.spv",
-                                                                           "shaders/text.frag.glsl.spv",
-                                                                           layout,
-                                                                           empty_vertex_input_ci);
-}
+VkDescriptorSetLayout *get_descriptor_set_layout(Descriptor_Set_Name ds_name);
 
 void draw_text_at_base(const char *text, size_t text_len, int x, int y, Color color)
 {
@@ -1015,20 +994,15 @@ void draw_text_at_base(const char *text, size_t text_len, int x, int y, Color co
     draw_text_at_base_ex(standard.text.default_font, text, text_len, x, y, color);
 }
 
+Rvk_Pipeline get_pipeline(Pipeline_Name pl_name);
+
 void draw_text_at_base_ex(Font font, const char *text, size_t text_len, int x, int y, Color color)
 {
-    Rvk_Pipeline pipeline = standard.pipelines[PIPELINE_TEXT];
-    if (!pipeline.handle) {
-        create_text_pipeline();
-        pipeline = standard.pipelines[PIPELINE_TEXT];
-
-
-        /* allocate and update descriptor sets for text bitmap */
-        assert(standard.ds_layouts[DS_LAYOUT_TEXT]);
-        if (!vk_allocate_descriptor_sets(vk_ctx.device.logical, &standard.text.ds,
-                                         .descriptorPool = vk_ctx.pool,
-                                         .descriptorSetCount = 1,
-                                         .pSetLayouts = &standard.ds_layouts[DS_LAYOUT_TEXT])) return;
+    if (standard.text.ds == VK_NULL_HANDLE) {
+        vk_allocate_descriptor_sets(vk_ctx.device.logical, &standard.text.ds,
+                                    .descriptorPool = vk_ctx.pool,
+                                    .descriptorSetCount = 1,
+                                    .pSetLayouts = get_descriptor_set_layout(DS_LAYOUT_TEXT));
 
         VkExtent2D extent = {.width = font.bitmap_width, .height = font.bitmap_height};
         standard.text.bitmap = r_create_texture_with_data(vk_ctx.device, extent, VK_FORMAT_R8_UNORM, font.bitmap);
@@ -1042,9 +1016,11 @@ void draw_text_at_base_ex(Font font, const char *text, size_t text_len, int x, i
             .pImageInfo = &standard.text.bitmap.info,
         };
         vkUpdateDescriptorSets(vk_ctx.device.logical, 1, &write, 0, NULL);
+
     }
 
     VkCommandBuffer cb = vk_ctx.device.cmd_buffs[0];
+    Rvk_Pipeline pipeline = get_pipeline(PIPELINE_TEXT);
     vkCmdBindPipeline(cb, 0, pipeline.handle);
     vkCmdBindDescriptorSets(cb, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline.layout,
                             0, 1, &standard.text.ds, 0, NULL);
@@ -1164,9 +1140,14 @@ void destroy_buffer(Rvk_Buffer buff)
     r_destroy_rvk_buffer(vk_ctx.device.logical, buff);
 }
 
-void destroy_texture(Rvk_Texture texture)
+void destroy_rvk_texture(Rvk_Texture texture)
 {
     r_destroy_texture(vk_ctx.device.logical, texture);
+}
+
+void unload_texture(Texture_2D texture)
+{
+    r_destroy_texture(vk_ctx.device.logical, texture.texture);
 }
 
 Rvk_Buffer create_vertex_buffer(size_t size, void *vertices)
@@ -1335,120 +1316,9 @@ void rotate_y(float angle)
         r_log(RVK_ERROR, "no matrix available to rotate y");
 }
 
-void init_draw_model_ds_layout()
-{
-    /* draw_model ds layout  */
-    VkDescriptorSetLayoutBinding tri_bindings[] = {
-        {
-            .binding         = 0,
-            .descriptorCount = 1,
-            .descriptorType  = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,
-            .stageFlags      = VK_SHADER_STAGE_VERTEX_BIT,
-        },
-        {
-            .binding         = 1,
-            .descriptorCount = 1,
-            .descriptorType  = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,
-            .stageFlags      = VK_SHADER_STAGE_VERTEX_BIT,
-        },
-        {
-            .binding         = 2,
-            .descriptorCount = 1,
-            .descriptorType  = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,
-            .stageFlags      = VK_SHADER_STAGE_VERTEX_BIT,
-        },
-        {
-            .binding         = 3,
-            .descriptorCount = 1,
-            .descriptorType  = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,
-            .stageFlags      = VK_SHADER_STAGE_VERTEX_BIT,
-        },
-        {
-            .binding         = 4,
-            .descriptorCount = 1,
-            .descriptorType  = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,
-            .stageFlags      = VK_SHADER_STAGE_VERTEX_BIT,
-        },
-        {
-            .binding         = 5,
-            .descriptorCount = 1,
-            .descriptorType  = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,
-            .stageFlags      = VK_SHADER_STAGE_VERTEX_BIT,
-        },
-        {
-            .binding         = 6,
-            .descriptorCount = 1,
-            .descriptorType  = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,
-            .stageFlags      = VK_SHADER_STAGE_VERTEX_BIT,
-        },
-        {
-            .binding         = 7,
-            .descriptorCount = 1,
-            .descriptorType  = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
-            .stageFlags      = VK_SHADER_STAGE_FRAGMENT_BIT,
-        },
-        {
-            .binding         = 8,
-            .descriptorCount = 1,
-            .descriptorType  = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
-            .stageFlags      = VK_SHADER_STAGE_FRAGMENT_BIT,
-        },
-        {
-            .binding         = 9,
-            .descriptorCount = 1,
-            .descriptorType  = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
-            .stageFlags      = VK_SHADER_STAGE_FRAGMENT_BIT,
-        },
-    };
-    vk_create_descriptor_set_layout(vk_ctx.device.logical, NULL, &standard.ds_layouts[DS_LAYOUT_DRAW_MODEL],
-                                    .pBindings = tri_bindings,
-                                    .bindingCount = ARRAY_LEN(tri_bindings));
-
-}
-
 void init_draw_model_uniform()
 {
     standard.draw_model.uniform.buffer = r_create_mapped_uniform_buffer(vk_ctx.device, sizeof(standard.draw_model.uniform.data));
-}
-
-void init_draw_model_pipeline()
-{
-    VkPipelineLayout layout = VK_NULL_HANDLE;
-    VkPushConstantRange pc_range = {
-        .stageFlags = VK_SHADER_STAGE_VERTEX_BIT|VK_SHADER_STAGE_FRAGMENT_BIT,
-        .size = sizeof(standard.draw_model.push_const)
-    };
-
-    if (!standard.ds_layouts[DS_LAYOUT_DRAW_MODEL]) init_draw_model_ds_layout(); // TODO: be more explicit with VK_NULL_HANDLE
-    vk_create_pipeline_layout(vk_ctx.device.logical, NULL, &layout,
-                              .pushConstantRangeCount = 1,
-                              .pPushConstantRanges = &pc_range,
-                              .setLayoutCount = 1,
-                              .pSetLayouts = &standard.ds_layouts[DS_LAYOUT_DRAW_MODEL]);
-
-    VkVertexInputAttributeDescription vert_attrs[] = {
-        {
-            .location = 0,
-            .format   = VK_FORMAT_R32G32B32_SFLOAT,
-            .offset   =  0,
-        },
-    };
-    VkVertexInputBindingDescription vert_bindings = {
-        .inputRate = VK_VERTEX_INPUT_RATE_VERTEX,
-        .stride    = sizeof(Vector3),
-    };
-    VkPipelineVertexInputStateCreateInfo vertex_input_ci = {
-        .sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO,
-        .vertexBindingDescriptionCount = 1,
-        .pVertexBindingDescriptions = &vert_bindings,
-        .vertexAttributeDescriptionCount = ARRAY_LEN(vert_attrs),
-        .pVertexAttributeDescriptions = vert_attrs,
-    };
-
-    standard.pipelines[PIPELINE_DRAW_MODEL] = create_triangle_rvk_pipeline("shaders/draw_model.vert.glsl.spv",
-                                                                           "shaders/draw_model.frag.glsl.spv",
-                                                                           layout,
-                                                                           vertex_input_ci);
 }
 
 void destroy_model(Model model)
@@ -1476,11 +1346,11 @@ void destroy_model(Model model)
     }
 
     for (size_t i = 0; i < model.textures.count; i++) {
-        free(model.images.items[i].data);
-        destroy_texture(model.textures.items[i]);
+        free(model.images.items[i].data); // TODO: probably want to destroy this sooner
+        destroy_rvk_texture(model.textures.items[i]);
     }
 
-    destroy_texture(model.phony.texture);
+    destroy_rvk_texture(model.phony.texture);
     destroy_buffer(model.phony.buffer);
 }
 
@@ -1489,14 +1359,14 @@ void load_model_gpu(Model *model)
     /* create phony attribute buffer and phony texture */
     model->phony.buffer  = create_compute_buffer_with_data(sizeof(model->phony.data), &model->phony.data);
     model->phony.image   = (Image){.width = 1, .height = 1, .data = &model->phony.data, };
-    model->phony.texture = create_texture_from_image(model->phony.image);
+    model->phony.texture = load_rvk_texture_from_image(model->phony.image);
 
     /* initialize uniform buffer if it's not already */
     if (!standard.draw_model.uniform.buffer.info.buffer) init_draw_model_uniform();
 
     /* create textures */
     for (size_t i = 0; i < model->images.count; i++) {
-        Rvk_Texture texture = create_texture_from_image(model->images.items[i]);
+        Rvk_Texture texture = load_rvk_texture_from_image(model->images.items[i]);
         da_append(&model->textures, texture);
     }
 
@@ -1572,13 +1442,10 @@ void load_model_gpu(Model *model)
         else
             metallic_roughness_image_info = &model->phony.texture.info;
 
-        /* allocate descriptor set */
-        if (!standard.ds_layouts[DS_LAYOUT_DRAW_MODEL]) init_draw_model_ds_layout();
-
         vk_allocate_descriptor_sets(vk_ctx.device.logical, &mesh->gpu.ds,
                                     .descriptorPool = vk_ctx.pool,
                                     .descriptorSetCount = 1,
-                                    .pSetLayouts = &standard.ds_layouts[DS_LAYOUT_DRAW_MODEL]);
+                                    .pSetLayouts = get_descriptor_set_layout(DS_LAYOUT_DRAW_MODEL));
 
         /* update descriptor set */
         VkWriteDescriptorSet writes[] = {
@@ -1665,19 +1532,12 @@ void load_model_gpu(Model *model)
         };
         vkUpdateDescriptorSets(vk_ctx.device.logical, ARRAY_LEN(writes), writes, 0, NULL);
     }
-
-
 }
 
 void draw_model(Model model)
 {
-    Rvk_Pipeline pipeline = standard.pipelines[PIPELINE_DRAW_MODEL];
-    if (!pipeline.handle) {
-        init_draw_model_pipeline();
-        pipeline = standard.pipelines[PIPELINE_DRAW_MODEL];
-    }
-
     VkCommandBuffer cb = get_command_buffer();
+    Rvk_Pipeline pipeline = get_pipeline(PIPELINE_DRAW_MODEL);
     bind_graphics_pipeline(pipeline.handle);
     set_viewport_scissor();
 
@@ -1707,10 +1567,8 @@ void draw_model(Model model)
 
 void draw_mesh(Mesh mesh)
 {
-    if (!standard.pipelines[PIPELINE_DRAW_MODEL].handle) init_draw_model_pipeline();
-    Rvk_Pipeline pipeline = standard.pipelines[PIPELINE_DRAW_MODEL];
-
     VkCommandBuffer cb = get_command_buffer();
+    Rvk_Pipeline pipeline = get_pipeline(PIPELINE_DRAW_MODEL);
     bind_graphics_pipeline(pipeline.handle);
     set_viewport_scissor();
 
@@ -1734,7 +1592,7 @@ void draw_mesh(Mesh mesh)
     vkCmdDrawIndexed(cb, mesh.cpu.indices.count, 1, 0, 0, 0);
 }
 
-Image create_image(const char *file_name)
+Image load_image(const char *file_name)
 {
     Image img = {0};
     int channels;
@@ -1748,7 +1606,7 @@ void disable_render_pass()
     standard.options.disable_render_pass = true;
 }
 
-Rvk_Texture create_texture_from_image(Image image)
+Rvk_Texture load_rvk_texture_from_image(Image image)
 {
     VkFormat format = 0;
     VkExtent2D extent = {image.width, image.height};
@@ -1762,46 +1620,315 @@ Rvk_Texture create_texture_from_image(Image image)
     return r_create_texture_with_data(vk_ctx.device, extent, format, image.data);
 }
 
-Rvk_Texture create_texture(int width, int height, VkFormat format)
+Rvk_Texture load_rvk_texture(int width, int height, VkFormat format)
 {
     assert(width > 0 && height > 0);
     VkExtent2D extent = {width, height};
     return r_create_texture(vk_ctx.device, extent, format);
 }
 
-Rvk_Texture create_texture_with_data(int width, int height, VkFormat format, void *data)
+Rvk_Texture load_rvk_texture_with_data(int width, int height, VkFormat format, void *data)
 {
     assert(width > 0 && height > 0);
     VkExtent2D extent = {width, height};
     return r_create_texture_with_data(vk_ctx.device, extent, format, data);
 }
 
+VkDescriptorSetLayout *create_draw_model_ds_layout()
+{
+    VkDescriptorSetLayout *ds_layout = &standard.ds_layouts[DS_LAYOUT_DRAW_MODEL];
+
+    if (*ds_layout != VK_NULL_HANDLE) printf("WARNING:create_draw_model_ds_layout: memory leak impending\n");
+
+    VkDescriptorSetLayoutBinding bindings[] = {
+        {
+            .binding         = 0,
+            .descriptorCount = 1,
+            .descriptorType  = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,
+            .stageFlags      = VK_SHADER_STAGE_VERTEX_BIT,
+        },
+        {
+            .binding         = 1,
+            .descriptorCount = 1,
+            .descriptorType  = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,
+            .stageFlags      = VK_SHADER_STAGE_VERTEX_BIT,
+        },
+        {
+            .binding         = 2,
+            .descriptorCount = 1,
+            .descriptorType  = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,
+            .stageFlags      = VK_SHADER_STAGE_VERTEX_BIT,
+        },
+        {
+            .binding         = 3,
+            .descriptorCount = 1,
+            .descriptorType  = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,
+            .stageFlags      = VK_SHADER_STAGE_VERTEX_BIT,
+        },
+        {
+            .binding         = 4,
+            .descriptorCount = 1,
+            .descriptorType  = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,
+            .stageFlags      = VK_SHADER_STAGE_VERTEX_BIT,
+        },
+        {
+            .binding         = 5,
+            .descriptorCount = 1,
+            .descriptorType  = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,
+            .stageFlags      = VK_SHADER_STAGE_VERTEX_BIT,
+        },
+        {
+            .binding         = 6,
+            .descriptorCount = 1,
+            .descriptorType  = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,
+            .stageFlags      = VK_SHADER_STAGE_VERTEX_BIT,
+        },
+        {
+            .binding         = 7,
+            .descriptorCount = 1,
+            .descriptorType  = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
+            .stageFlags      = VK_SHADER_STAGE_FRAGMENT_BIT,
+        },
+        {
+            .binding         = 8,
+            .descriptorCount = 1,
+            .descriptorType  = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
+            .stageFlags      = VK_SHADER_STAGE_FRAGMENT_BIT,
+        },
+        {
+            .binding         = 9,
+            .descriptorCount = 1,
+            .descriptorType  = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
+            .stageFlags      = VK_SHADER_STAGE_FRAGMENT_BIT,
+        },
+    };
+    vk_create_descriptor_set_layout(vk_ctx.device.logical, NULL, ds_layout,
+                                    .pBindings = bindings,
+                                    .bindingCount = ARRAY_LEN(bindings));
+
+    return ds_layout;
+}
+
+
+VkDescriptorSetLayout *create_text_ds_layout()
+{
+    VkDescriptorSetLayout *ds_layout = &standard.ds_layouts[DS_LAYOUT_TEXT];
+
+    if (*ds_layout != VK_NULL_HANDLE) printf("WARNING:create_text_ds_layout: memory leak impending\n");
+
+    VkDescriptorSetLayoutBinding bindings[] = {
+        {
+            .binding         = 0,
+            .descriptorCount = 1,
+            .descriptorType  = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
+            .stageFlags      = VK_SHADER_STAGE_FRAGMENT_BIT,
+        }
+    };
+    vk_create_descriptor_set_layout(vk_ctx.device.logical, NULL, ds_layout,
+                                    .pBindings = bindings,
+                                    .bindingCount = ARRAY_LEN(bindings));
+    return ds_layout;
+}
+
+VkDescriptorSetLayout *create_2D_texture_ds_layout()
+{
+    VkDescriptorSetLayout *ds_layout = &standard.ds_layouts[DS_LAYOUT_PRIMITIVE_2D_TEXTURE];
+
+    if (*ds_layout != VK_NULL_HANDLE) printf("WARNING:create_2D_texture_ds_layout: memory leak impending\n");
+
+    VkDescriptorSetLayoutBinding bindings[] = {
+        {
+            .binding = 0,
+            .descriptorCount = 1,
+            .descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
+            .stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT
+        },
+    };
+    vk_create_descriptor_set_layout(vk_ctx.device.logical, NULL, ds_layout,
+                                    .pBindings = bindings,
+                                    .bindingCount = ARRAY_LEN(bindings));
+    return ds_layout;
+
+}
+
+VkDescriptorSetLayout *get_descriptor_set_layout(Descriptor_Set_Name ds_name)
+{
+    VkDescriptorSetLayout *ds_layout = VK_NULL_HANDLE;
+
+    if (!(0 <= ds_name && ds_name < DS_LAYOUT_COUNT)) {
+        printf("ERROR: unrecognized ds layout type %d\n", ds_name);
+        return ds_layout;
+    } else {
+        ds_layout = &standard.ds_layouts[ds_name];
+    }
+
+    if (*ds_layout != VK_NULL_HANDLE) return ds_layout;
+
+    switch (ds_name) {
+    case DS_LAYOUT_DRAW_MODEL:           ds_layout = create_draw_model_ds_layout(); break;
+    case DS_LAYOUT_TEXT:                 ds_layout = create_text_ds_layout();       break;
+    case DS_LAYOUT_PRIMITIVE_2D_TEXTURE: ds_layout = create_2D_texture_ds_layout(); break;
+    default: UNREACHABLE("unreachable ds layout");
+    }
+
+    return ds_layout;
+}
+
+Rvk_Pipeline create_draw_model_pipeline()
+{
+    Rvk_Pipeline pipeline = standard.pipelines[PIPELINE_DRAW_MODEL];
+    if (pipeline.handle != VK_NULL_HANDLE) printf("WARNING: memory leak create_draw_model_pipeline\n");
+
+    VkPipelineLayout layout = VK_NULL_HANDLE;
+    VkPushConstantRange pc_range = {
+        .stageFlags = VK_SHADER_STAGE_VERTEX_BIT|VK_SHADER_STAGE_FRAGMENT_BIT,
+        .size = sizeof(standard.draw_model.push_const)
+    };
+    vk_create_pipeline_layout(vk_ctx.device.logical, NULL, &layout,
+                              .pushConstantRangeCount = 1,
+                              .pPushConstantRanges = &pc_range,
+                              .setLayoutCount = 1,
+                              .pSetLayouts = get_descriptor_set_layout(DS_LAYOUT_DRAW_MODEL));
+
+    VkVertexInputAttributeDescription vert_attrs[] = {
+        {
+            .location = 0,
+            .format   = VK_FORMAT_R32G32B32_SFLOAT,
+            .offset   =  0,
+        },
+    };
+    VkVertexInputBindingDescription vert_bindings = {
+        .inputRate = VK_VERTEX_INPUT_RATE_VERTEX,
+        .stride    = sizeof(Vector3),
+    };
+    VkPipelineVertexInputStateCreateInfo vertex_input_ci = {
+        .sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO,
+        .vertexBindingDescriptionCount = 1,
+        .pVertexBindingDescriptions = &vert_bindings,
+        .vertexAttributeDescriptionCount = ARRAY_LEN(vert_attrs),
+        .pVertexAttributeDescriptions = vert_attrs,
+    };
+
+    pipeline = create_triangle_rvk_pipeline("shaders/draw_model.vert.glsl.spv",
+                                            "shaders/draw_model.frag.glsl.spv",
+                                            layout,
+                                            vertex_input_ci);
+    standard.pipelines[PIPELINE_DRAW_MODEL] = pipeline;
+    return pipeline;
+}
+
+Rvk_Pipeline create_text_pipeline()
+{
+    Rvk_Pipeline pipeline = standard.pipelines[PIPELINE_TEXT];
+    if (pipeline.handle != VK_NULL_HANDLE)
+        printf("WARNING: memory leak inside of create_text_pipeline\n");
+
+    VkPipelineLayout layout = VK_NULL_HANDLE;
+    VkPushConstantRange pc_range = {
+        .stageFlags = VK_SHADER_STAGE_VERTEX_BIT|VK_SHADER_STAGE_FRAGMENT_BIT,
+        .size = sizeof(standard.text.push_const)
+    };
+    vk_create_pipeline_layout(vk_ctx.device.logical, NULL, &layout,
+                              .pushConstantRangeCount = 1,
+                              .pPushConstantRanges = &pc_range,
+                              .setLayoutCount = 1,
+                              .pSetLayouts = get_descriptor_set_layout(DS_LAYOUT_TEXT));
+    VkPipelineVertexInputStateCreateInfo empty_vertex_input_ci = {0};
+    pipeline = create_triangle_blend_rvk_pipeline("shaders/text.vert.glsl.spv",
+                                                  "shaders/text.frag.glsl.spv",
+                                                  layout,
+                                                  empty_vertex_input_ci);
+    standard.pipelines[PIPELINE_TEXT] = pipeline;
+    return pipeline;
+}
+
+
+Rvk_Pipeline create_primitive_2D_pipeline()
+{
+    Rvk_Pipeline pipeline = standard.pipelines[PIPELINE_PRIMITIVE_2D];
+    if (pipeline.handle != VK_NULL_HANDLE) printf("WARNING: memory leak create_primitive_2D_pipeline\n");
+
+    VkPipelineLayout layout = VK_NULL_HANDLE;
+    VkPushConstantRange pc_range = {
+        .stageFlags = VK_SHADER_STAGE_VERTEX_BIT|VK_SHADER_STAGE_FRAGMENT_BIT,
+        .size = sizeof(standard.primitive_2D.push_const)
+    };
+    vk_create_pipeline_layout(vk_ctx.device.logical, NULL, &layout,
+                              .pushConstantRangeCount = 1,
+                              .pPushConstantRanges = &pc_range);
+
+    VkPipelineVertexInputStateCreateInfo empty_vertex_input_ci = {0};
+    pipeline = create_triangle_rvk_pipeline("shaders/primitive_2D.vert.glsl.spv",
+                                            "shaders/primitive_2D.frag.glsl.spv",
+                                            layout,
+                                            empty_vertex_input_ci);
+    standard.pipelines[PIPELINE_PRIMITIVE_2D] = pipeline;
+    return pipeline;
+}
+
+
+Rvk_Pipeline create_primitive_2D_texture_pipeline()
+{
+    Rvk_Pipeline pipeline = standard.pipelines[PIPELINE_PRIMITIVE_2D_TEXTURE];
+    if (pipeline.handle != VK_NULL_HANDLE) printf("WARNING: memory leak create_primitive_2D_texture_pipelien\n");
+
+    VkPipelineLayout layout = VK_NULL_HANDLE;
+    VkPushConstantRange pc_range = {
+        .stageFlags = VK_SHADER_STAGE_VERTEX_BIT|VK_SHADER_STAGE_FRAGMENT_BIT,
+        .size = sizeof(standard.primitive_2D_texture.push_const)
+    };
+    vk_create_pipeline_layout(vk_ctx.device.logical, NULL, &layout,
+                              .pushConstantRangeCount = 1,
+                              .pPushConstantRanges = &pc_range,
+                              .setLayoutCount = 1,
+                              .pSetLayouts = get_descriptor_set_layout(DS_LAYOUT_PRIMITIVE_2D_TEXTURE));
+
+    VkPipelineVertexInputStateCreateInfo empty_vertex_input_ci = {0};
+    pipeline = create_triangle_rvk_pipeline("shaders/primitive_2D_texture.vert.glsl.spv",
+                                            "shaders/primitive_2D_texture.frag.glsl.spv",
+                                            layout,
+                                            empty_vertex_input_ci);
+    standard.pipelines[PIPELINE_PRIMITIVE_2D_TEXTURE] = pipeline;
+    return pipeline;
+}
+
+Rvk_Pipeline get_pipeline(Pipeline_Name pl_name)
+{
+    Rvk_Pipeline pipeline = {0};
+
+    if (!(0 <= pl_name && pl_name < PIPELINE_COUNT)) {
+        printf("ERROR: unrecognized pipeline type %d\n", pl_name);
+        return pipeline;
+    } else {
+        pipeline = standard.pipelines[pl_name];
+    }
+
+    if (pipeline.handle != VK_NULL_HANDLE) return pipeline;
+
+    switch (pl_name) {
+    case PIPELINE_DRAW_MODEL:           pipeline = create_draw_model_pipeline();           break;
+    case PIPELINE_TEXT:                 pipeline = create_text_pipeline();                 break;
+    case PIPELINE_PRIMITIVE_2D:         pipeline = create_primitive_2D_pipeline();         break;
+    case PIPELINE_PRIMITIVE_2D_TEXTURE: pipeline = create_primitive_2D_texture_pipeline(); break;
+    default: UNREACHABLE("unreachable get_pipeline()");
+    }
+
+    return pipeline;
+}
+
 VkDescriptorSet create_primitive_2D_texture_ds(Rvk_Texture texture)
 {
     VkDescriptorSet ds = VK_NULL_HANDLE;
 
-    if (standard.pipelines[PIPELINE_PRIMITIVE_2D_TEXTURE].handle == VK_NULL_HANDLE)
-        init_primitive_2D_texture_pipeline();
-
-    assert(standard.ds_layouts[DS_LAYOUT_PRIMITIVE_2D_TEXTURE] != VK_NULL_HANDLE);
-    assert(standard.frame_buffers[0].info.buffer != VK_NULL_HANDLE);
     vk_allocate_descriptor_sets(vk_ctx.device.logical, &ds,
                                 .descriptorPool = vk_ctx.pool,
                                 .descriptorSetCount = 1,
-                                .pSetLayouts = &standard.ds_layouts[DS_LAYOUT_PRIMITIVE_2D_TEXTURE]);
+                                .pSetLayouts = get_descriptor_set_layout(DS_LAYOUT_PRIMITIVE_2D_TEXTURE));
     assert(ds != VK_NULL_HANDLE);
     VkWriteDescriptorSet writes[] = {
         {
             .sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
             .dstBinding = 0,
-            .descriptorCount = 1,
-            .descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,
-            .dstSet = ds,
-            .pBufferInfo = &standard.frame_buffers[0].info,
-        },
-        {
-            .sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
-            .dstBinding = 1,
             .descriptorCount = 1,
             .descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
             .dstSet = ds,
@@ -1811,6 +1938,23 @@ VkDescriptorSet create_primitive_2D_texture_ds(Rvk_Texture texture)
     vkUpdateDescriptorSets(vk_ctx.device.logical, ARRAY_LEN(writes), writes, 0, NULL);
 
     return ds;
+}
+
+Texture_2D load_texture(const char *file_name)
+{
+    Texture_2D t = {0};
+
+    Image image = load_image(file_name);
+
+    if (image.data) {
+        t.width = image.width;
+        t.height = image.height;
+        t.texture = load_rvk_texture_from_image(image);
+        free(image.data);
+        t.ds = create_primitive_2D_texture_ds(t.texture);
+    }
+
+    return t;
 }
 
 void init_standard_3D_shapes()
@@ -1898,33 +2042,8 @@ int measure_text_ex(Font font, const char *text, size_t text_len)
     return width;
 }
 
-void init_primitive_2D_pipeline()
-{
-    VkPipelineLayout layout = VK_NULL_HANDLE;
-    VkPushConstantRange pc_range = {
-        .stageFlags = VK_SHADER_STAGE_VERTEX_BIT|VK_SHADER_STAGE_FRAGMENT_BIT,
-        .size = sizeof(standard.primitive_2D.push_const)
-    };
-
-    vk_create_pipeline_layout(vk_ctx.device.logical, NULL, &layout,
-                              .pushConstantRangeCount = 1,
-                              .pPushConstantRanges = &pc_range);
-
-    VkPipelineVertexInputStateCreateInfo empty_vertex_input_ci = {0};
-    standard.pipelines[PIPELINE_PRIMITIVE_2D] = create_triangle_rvk_pipeline("shaders/primitive_2D.vert.glsl.spv",
-                                                                             "shaders/primitive_2D.frag.glsl.spv",
-                                                                             layout,
-                                                                             empty_vertex_input_ci);
-}
-
 void draw_rectangle_rounded(int x, int y, int width, int height, int radius, Color color)
 {
-    Rvk_Pipeline pipeline = standard.pipelines[PIPELINE_PRIMITIVE_2D];
-    if (!pipeline.handle) {
-        init_primitive_2D_pipeline();
-        pipeline = standard.pipelines[PIPELINE_PRIMITIVE_2D];
-    }
-
     Window window = get_window();
     standard.primitive_2D.push_const.shape_2D = radius>0 ? SHAPE_2D_RECTANGLE_ROUNDED : SHAPE_2D_RECTANGLE;
     standard.primitive_2D.push_const.x = x;
@@ -1937,6 +2056,7 @@ void draw_rectangle_rounded(int x, int y, int width, int height, int radius, Col
     standard.primitive_2D.push_const.color = color_to_uint32_t(color);
 
     VkCommandBuffer cb = get_command_buffer();
+    Rvk_Pipeline pipeline = get_pipeline(PIPELINE_PRIMITIVE_2D);
     vkCmdBindPipeline(cb, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline.handle);
     VkShaderStageFlags flags = VK_SHADER_STAGE_FRAGMENT_BIT|VK_SHADER_STAGE_VERTEX_BIT;
     size_t size = sizeof(standard.primitive_2D.push_const);
@@ -1950,62 +2070,42 @@ void draw_rectangle(int x, int y, int width, int height, Color color)
     draw_rectangle_rounded(x, y, width, height, 0, color);
 }
 
-void draw_rectangle_rounded_texture(VkDescriptorSet ds, int x, int y, int width, int height, int radius)
+void draw_rectangle_rounded_texture(Texture_2D texture, int x, int y, int width, int height, int radius)
 {
-//    int win_width = window.resolution_width;
-//    int win_height = window.resolution_height;
-//    if (width <= 0)     return;
-//    if (height <= 0)    return;
-//    if (x > win_width)  return;
-//    if (y > win_height) return;
-//    if (x + width < 0)  return;
-//    if (y + height < 0) return;
-//    // x = (x < 0) ? 0 : x;
-//    // y = (y < 0) ? 0 : y;
-//    // width  = (x + width > win_width)   ? (x + width - win_width ) : width;
-//    // height = (y + height > win_height) ? (y + height - win_height) : height;
-//
-//    assert(ds != VK_NULL_HANDLE);
-//    if (!standard.primitive_2D_texture.pl.handle) {
-//        init_primitive_2D_texture_pipeline();
-//    }
-//
-//    VkCommandBuffer cb = get_command_buffer();
-//
-//    standard.primitive_2D_texture.push_const.shape        = SHAPE_2D_RECTANGLE;
-//    standard.primitive_2D_texture.push_const.x            = x;
-//    standard.primitive_2D_texture.push_const.y            = y;
-//    standard.primitive_2D_texture.push_const.width        = width;
-//    standard.primitive_2D_texture.push_const.height       = height;
-//    standard.primitive_2D_texture.push_const.radius       = radius;
-//    standard.primitive_2D_texture.push_const.color        = color_to_uint32_t(color);
-//    standard.primitive_2D_texture.push_const.frame_width  = window.resolution_width;
-//    standard.primitive_2D_texture.push_const.frame_height = window.resolution_height;
-//
-//    vkCmdBindPipeline(cb, VK_PIPELINE_BIND_POINT_COMPUTE, standard.primitive_2D_texture.pl.handle);
-//    vkCmdPushConstants(cb, standard.primitive_2D_texture.pl.layout, VK_SHADER_STAGE_COMPUTE_BIT,
-//                       0, sizeof(standard.primitive_2D_texture.push_const), &standard.primitive_2D_texture.push_const);
-//    vkCmdBindDescriptorSets(cb, VK_PIPELINE_BIND_POINT_COMPUTE, standard.primitive_2D_texture.pl.layout, 0,
-//                            1, &ds, 0, NULL);
-//
-//    size_t group_x, group_y, group_z;
-//    group_x = ceil(width/DEFAULT_IMAGE_WORKGROUP_SIZE);
-//    group_y = ceil(height/DEFAULT_IMAGE_WORKGROUP_SIZE);
-//    group_z = 1;
-//    vkCmdDispatch(cb, group_x, group_y, group_z);
-//
-//    // block writes to frame buffer until this is finished rendering
-//    comp_to_comp_buff_barrier(standard.frame_buffers[0].info.buffer);
+    if (width <= 0)     return;
+    if (height <= 0)    return;
+    if ((uint32_t)x > window.width)  return;
+    if ((uint32_t)y > window.height) return;
+    if (x + width < 0)  return;
+    if (y + height < 0) return;
+    // x = (x < 0) ? 0 : x;
+    // y = (y < 0) ? 0 : y;
+    // width  = (x + width > window.width)   ? (x + width - window.width ) : width;
+    // height = (y + height > window.height) ? (y + height - window.height) : height;
+
+    if(texture.ds == VK_NULL_HANDLE) return;
+
+    standard.primitive_2D_texture.push_const.x            = x;
+    standard.primitive_2D_texture.push_const.y            = y;
+    standard.primitive_2D_texture.push_const.width        = width;
+    standard.primitive_2D_texture.push_const.height       = height;
+    standard.primitive_2D_texture.push_const.radius       = radius;
+    standard.primitive_2D_texture.push_const.window_width  = window.width;
+    standard.primitive_2D_texture.push_const.window_height = window.height;
+
+    VkCommandBuffer cb = get_command_buffer();
+    Rvk_Pipeline pipeline = get_pipeline(PIPELINE_PRIMITIVE_2D_TEXTURE);
+    vkCmdBindPipeline(cb, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline.handle);
+    vkCmdBindDescriptorSets(cb, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline.layout, 0, 1, &texture.ds, 0, NULL);
+    VkShaderStageFlags flags = VK_SHADER_STAGE_FRAGMENT_BIT|VK_SHADER_STAGE_VERTEX_BIT;
+    size_t size = sizeof(standard.primitive_2D_texture.push_const);
+    vkCmdPushConstants(cb, pipeline.layout, flags, 0, size, &standard.primitive_2D_texture.push_const);
+    set_viewport_scissor();
+    vkCmdDraw(cb, 6, 1, 0, 0);
 }
 
 void draw_circle(int x, int y, int radius, Color color)
 {
-    Rvk_Pipeline pipeline = standard.pipelines[PIPELINE_PRIMITIVE_2D];
-    if (!pipeline.handle) {
-        init_primitive_2D_pipeline();
-        pipeline = standard.pipelines[PIPELINE_PRIMITIVE_2D];
-    }
-
     Window window = get_window();
     standard.primitive_2D.push_const.shape_2D = SHAPE_2D_CIRCLE;
     standard.primitive_2D.push_const.width  = radius*2;
@@ -2017,10 +2117,18 @@ void draw_circle(int x, int y, int radius, Color color)
     standard.primitive_2D.push_const.color = color_to_uint32_t(color);
 
     VkCommandBuffer cb = get_command_buffer();
+    Rvk_Pipeline pipeline = get_pipeline(PIPELINE_PRIMITIVE_2D);
     vkCmdBindPipeline(cb, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline.handle);
     VkShaderStageFlags flags = VK_SHADER_STAGE_FRAGMENT_BIT|VK_SHADER_STAGE_VERTEX_BIT;
     size_t size = sizeof(standard.primitive_2D.push_const);
     vkCmdPushConstants(cb, pipeline.layout, flags, 0, size, &standard.primitive_2D.push_const);
     set_viewport_scissor();
     vkCmdDraw(cb, 6, 1, 0, 0);
+}
+
+void set_target_fps(int fps)
+{
+    if (fps < 1) frame_ctx.time.target = 0.0;
+    else frame_ctx.time.target = 1.0 / (double) fps;
+    printf("target fps: %02.03f ms\n", (float) frame_ctx.time.target*1000.0f);
 }

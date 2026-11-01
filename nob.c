@@ -21,8 +21,10 @@ const char *my_computer_srcs[] = {
 const char *shaders[] = {
     "draw_model.vert.glsl",
     "draw_model.frag.glsl",
-    "primitive_2D.frag.glsl",
     "primitive_2D.vert.glsl",
+    "primitive_2D.frag.glsl",
+    "primitive_2D_texture.vert.glsl",
+    "primitive_2D_texture.frag.glsl",
     "text.vert.glsl",
     "text.frag.glsl",
 };
