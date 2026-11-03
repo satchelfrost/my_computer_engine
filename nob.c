@@ -10,9 +10,9 @@
 #define EXTERNAL SRC "external/"
 #define SHADERS "shaders/"
 
-const char *my_computer_srcs[] = {
-    SRC"my_computer.h",
-    ENGINE"my_computer.c",
+const char *my_computer_engine_srcs[] = {
+    SRC"my_computer_engine.h",
+    ENGINE"my_computer_engine.c",
     ENGINE"obj_loader.c",
     ENGINE"gltf_loader.c",
     ENGINE"geometry.c",
@@ -153,18 +153,18 @@ bool build_glfw(Cmd *cmd, const char *target)
     return cmd_run(cmd);
 }
 
-bool build_my_computer(Cmd *cmd, bool force, const char *target)
+bool build_my_computer_engine(Cmd *cmd, bool force, const char *target)
 {
     const char *build_dir = (target == "linux") ? LINUX : WINDOWS;
-    const char *o = temp_sprintf("%smy_computer.o", build_dir);
-    const char *c = temp_sprintf(ENGINE"my_computer.c");
+    const char *o = temp_sprintf("%smy_computer_engine.o", build_dir);
+    const char *c = temp_sprintf(ENGINE"my_computer_engine.c");
 
-    int my_computer_touched = needs_rebuild(o, my_computer_srcs, ARRAY_LEN(my_computer_srcs));
-    if (my_computer_touched < 0) {
-        nob_log(ERROR, "needs rebuild failed for my_computer");
+    int my_computer_engine_touched = needs_rebuild(o, my_computer_engine_srcs, ARRAY_LEN(my_computer_engine_srcs));
+    if (my_computer_engine_touched < 0) {
+        nob_log(ERROR, "needs rebuild failed for my_computer_engine");
         return false;
     }
-    if (!my_computer_touched && !force) return true;
+    if (!my_computer_engine_touched && !force) return true;
 
     cmd_append(cmd, (target == "linux") ? "gcc" : "x86_64-w64-mingw32-gcc", "-Wall", "-Wextra", "-g");
     if (target == "linux") cmd_append(cmd, "-DVULKAN_VALIDATION_ON"); // only use validation if not windows
@@ -185,22 +185,22 @@ bool build_example(Cmd *cmd, bool force, const char *target, const char *example
     const char *c = temp_sprintf(SRC"%s.c", example_name);
     const char *e = temp_sprintf("%s%s%s", build_dir, example_name, (target == "windows") ? ".exe" : "");
     const char *glfw = temp_sprintf("%srglfw.o", build_dir);
-    const char *my_computer = temp_sprintf("%smy_computer.o", build_dir);
+    const char *my_computer_engine = temp_sprintf("%smy_computer_engine.o", build_dir);
 
     int src_touched = needs_rebuild1(e, c);
-    int my_computer_touched = needs_rebuild1(e, my_computer);
+    int my_computer_engine_touched = needs_rebuild1(e, my_computer_engine);
     int glfw_touched = needs_rebuild1(e, glfw);
-    if (src_touched < 0)         nob_log(ERROR, "needs rebuild command failed for source %s", example_name);
-    if (my_computer_touched < 0) nob_log(ERROR, "needs rebuild command failed for my_computer");
-    if (glfw_touched < 0)        nob_log(ERROR, "needs rebuild command failed for example glfw");
-    if (!src_touched && !my_computer_touched && !glfw_touched && !force) return true;
+    if (src_touched < 0)                nob_log(ERROR, "needs rebuild command failed for source %s", example_name);
+    if (my_computer_engine_touched < 0) nob_log(ERROR, "needs rebuild command failed for my_computer_engine");
+    if (glfw_touched < 0)               nob_log(ERROR, "needs rebuild command failed for example glfw");
+    if (!src_touched && !my_computer_engine_touched && !glfw_touched && !force) return true;
 
     cmd_append(cmd, (target == "linux") ? "gcc" : "x86_64-w64-mingw32-gcc", "-Wall", "-Wextra", "-g");
     cmd_append(cmd, "-I./"EXTERNAL);
     cmd_append(cmd, "-I./"EXTERNAL"glfw/include");
     cmd_append(cmd, "-I./"SRC);
     cmd_append(cmd, "-o", e);
-    cmd_append(cmd, c, glfw, my_computer);
+    cmd_append(cmd, c, glfw, my_computer_engine);
     for (size_t i = 0; i < ARRAY_LEN(hdr_modules); i++) {
         const char *obj = temp_sprintf("%s%s.o", (target == "linux") ? LINUX : WINDOWS, hdr_modules[i].name);
         cmd_append(cmd, obj);
@@ -399,7 +399,7 @@ int main(int argc, char **argv)
 
     if (!build_header_only_libraries(&cmd, config.target, config.clean)) return 1;
     if (!build_glfw(&cmd, config.target)) return 1;
-    if (!build_my_computer(&cmd, config.clean, config.target)) return 1;
+    if (!build_my_computer_engine(&cmd, config.clean, config.target)) return 1;
     for (size_t i = 0; i < ARRAY_LEN(examples); i++)
         if (!build_example(&cmd, config.clean, config.target, examples[i])) return 1;
     if (!compile_shaders(&cmd)) return 1;

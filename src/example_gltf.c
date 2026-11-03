@@ -1,4 +1,4 @@
-#include "my_computer.h"
+#include "my_computer_engine.h"
 
 int main()
 {
@@ -13,7 +13,8 @@ int main()
         .fovy     = 45.0f,
     };
 
-    /* this particular asset has separate meshes, which are actually models */
+    /* This gltf model contains several meshes which are actually separate 3D models.
+     * I'm ignoring hierarchy information and just callying draw_mesh on the individual meshes */
     int mesh_idx = 0;
 
     while (!window_should_close()) {

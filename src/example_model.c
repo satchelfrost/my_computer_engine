@@ -1,6 +1,4 @@
-#include "my_computer.h"
-
-#define FONT_SIZE 42
+#include "my_computer_engine.h"
 
 uint32_t rand_color()
 {
@@ -16,12 +14,15 @@ uint32_t rand_color()
 int main()
 {
     init_window(800, 450, "cube");
-    Model bunny  = load_model_obj("assets/bunny.obj");
-    bunny.meshes.items[0].material.color = GOLD;
     Shape_3D shape = SHAPE_3D_CUBE;
+    Model bunny = {0};
 
-    /* show individual triangles of bunny model */
-    if (0) {
+    if (1) {
+        bunny = load_model_obj("assets/bunny.obj");
+        bunny.meshes.items[0].material.color = GOLD;
+    } else {
+        /* show individual triangles of bunny model */
+        bunny = load_model_obj_into_memory("assets/bunny.obj");
         size_t tri_count = bunny.meshes.items[0].cpu.indices.count/3;
         for (size_t i = 0; i < tri_count; i++) {
             uint32_t c = rand_color();
@@ -29,6 +30,7 @@ int main()
             da_append(&bunny.meshes.items[0].cpu.colors, c);
             da_append(&bunny.meshes.items[0].cpu.colors, c);
         }
+        load_model_gpu(&bunny);
     }
 
     Camera camera = {

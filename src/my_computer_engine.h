@@ -1,5 +1,5 @@
-#ifndef MY_COMPUTER_H_
-#define MY_COMPUTER_H_
+#ifndef MY_COMPUTER_ENGINE_H_
+#define MY_COMPUTER_ENGINE_H_
 
 #include <stdbool.h>
 #include "rvk.h"
@@ -588,4 +588,4 @@ void pause_music_stream(Music music);
 void resume_music_stream(Music music);
 void set_music_volume(Music music, float volume);
 
-#endif // MY_COMPUTER_H_
+#endif // MY_COMPUTER_ENGINE_H_
