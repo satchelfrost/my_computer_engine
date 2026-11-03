@@ -40,7 +40,7 @@ vec4 srgb_to_linear(vec4 srgb)
 {
 	vec3 b_less = step(vec3(0.04045),srgb.xyz);
 	vec3 lin_out = mix(srgb.xyz/vec3(12.92), pow((srgb.xyz+vec3(0.055))/vec3(1.055),vec3(2.4)), b_less);
-	return vec4(lin_out,srgb.w);;
+	return vec4(lin_out,srgb.w);
 }
 
 void main()
@@ -65,5 +65,4 @@ void main()
     }
 
     out_color = srgb_to_linear(out_color);
-
 }

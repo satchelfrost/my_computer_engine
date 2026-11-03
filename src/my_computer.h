@@ -512,7 +512,8 @@ typedef enum {
 } Shape_3D;
 
 void draw_shape_3D(Shape_3D shape);
-
+Model get_standard_shapes();
+Mesh get_standard_shape();
 
 /////////////////////////////////////////////
 /* buffer */
@@ -539,5 +540,52 @@ Rvk_Pipeline create_triangle_rvk_pipeline(const char *vert_shader, const char *f
 Rvk_Pipeline create_triangle_blend_rvk_pipeline(const char *vert_shader, const char *frag_shader, VkPipelineLayout layout, VkPipelineVertexInputStateCreateInfo vert_input);
 void destroy_pipeline(Rvk_Pipeline pipeline);
 void bind_graphics_pipeline(VkPipeline pl); // TODO: where is this used?
+
+/////////////////////////////////////////////
+/* audio */
+/////////////////////////////////////////////
+typedef struct Audio_Buffer Audio_Buffer;
+
+typedef struct {
+    Audio_Buffer *buffer;
+    uint32_t sample_rate;
+    uint32_t sample_size;
+    uint32_t channels;
+} Audio_Stream;
+
+typedef struct {
+    Audio_Stream stream;
+    uint32_t frame_count;
+} Sound;
+
+typedef struct {
+    Audio_Stream stream;
+    uint32_t frame_count;
+    bool looping;
+    void *data;
+} Music;
+
+void init_audio_device(void);
+void close_audio_device(void);
+
+Sound load_sound(const char *file_path); // use sound if < 10 seconds
+void unload_sound(Sound sound);
+void play_sound(Sound sound);
+void stop_sound(Sound sound);
+void pause_sound(Sound sound);
+void resume_sound(Sound sound);
+bool is_sound_playing(Sound sound);
+void set_sound_volume(Sound sound, float volume); // range 0 - 1.0
+void set_sound_pitch(Sound sound, float pitch);   // range 0 - 1.0
+void set_sound_pan(Sound sound, float pan);       // -1 = left, 0 = center, +1 = right
+
+Music load_music_stream(const char *file_path); // use music if > 10 seconds
+void unload_music_stream(Music music);
+void play_music_stream(Music music);
+void stop_music_stream(Music music);
+void update_music_stream(Music music);
+void pause_music_stream(Music music);
+void resume_music_stream(Music music);
+void set_music_volume(Music music, float volume);
 
 #endif // MY_COMPUTER_H_

@@ -41,8 +41,8 @@ int main()
     while (!window_should_close()) {
         if (is_key_down(KEY_F)) log_fps();
         if (is_key_pressed(KEY_SPACE)) {
-            /* 1 extra shape for the bunny model */
-            shape = (shape + 1)%(SHAPE_3D_COUNT + 1);
+            /* one extra shape for the bunny model */
+            if (++shape == SHAPE_3D_COUNT + 1) shape = 0;
         }
 
         update_camera_free(&camera);

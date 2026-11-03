@@ -13,6 +13,7 @@
 #include "gltf_loader.c"
 #include "obj_loader.c"
 #include "geometry.c"
+#include "audio.c"
 
 #ifndef Z_NEAR
     #define Z_NEAR 0.1
@@ -2006,6 +2007,20 @@ void draw_shape_3D(Shape_3D shape)
     if (!standard.shapes_3D.meshes.count) init_standard_3D_shapes();
     if (shape >= 0 && shape < SHAPE_3D_COUNT)
         draw_mesh(standard.shapes_3D.meshes.items[shape]);
+}
+
+Model get_standard_shapes()
+{
+    if (!standard.shapes_3D.meshes.count) init_standard_3D_shapes();
+    return standard.shapes_3D;
+}
+
+Mesh get_standard_shape(Shape_3D shape)
+{
+    Mesh mesh = {0};
+    if (!standard.shapes_3D.meshes.count) init_standard_3D_shapes();
+    if (0 <= shape && shape < SHAPE_3D_COUNT) mesh = standard.shapes_3D.meshes.items[shape];
+    return mesh;
 }
 
 void draw_fps()

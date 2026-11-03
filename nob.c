@@ -37,6 +37,7 @@ const char *examples[] = {
     "example_primitive_2D",
     "example_text_editing",
     "example_textured_rectangle",
+    "example_audio",
 };
 
 struct {
@@ -75,17 +76,16 @@ struct {
         .impl_define = "-DRVK_IMPLEMENTATION",
         .include_dir = EXTERNAL,
     },
-// TODO: not using these yet, but I will once I add in the audio library from creese_2D
-//    {
-//        .name = "miniaudio",
-//        .impl_define = "-DMINIAUDIO_IMPLEMENTATION",
-//        .include_dir = EXTERNAL,
-//    },
-//    {
-//        .name = "dr_wav",
-//        .impl_define = "-DDR_WAV_IMPLEMENTATION",
-//        .include_dir = EXTERNAL,
-//    },
+    {
+        .name = "miniaudio",
+        .impl_define = "-DMINIAUDIO_IMPLEMENTATION",
+        .include_dir = EXTERNAL,
+    },
+    {
+        .name = "dr_wav",
+        .impl_define = "-DDR_WAV_IMPLEMENTATION",
+        .include_dir = EXTERNAL,
+    },
     {
         .name = "nob",
         .impl_define = "-DNOB_IMPLEMENTATION",
