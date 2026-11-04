@@ -4,7 +4,7 @@ int main()
 {
     init_window(500, 500, "gltf");
 
-    Model psx = load_model_gltf("assets/psx/scene.gltf");
+    Model model = load_model_gltf("assets/psx/scene.gltf" );
 
     Camera camera = {
         .position = {0.0f, 2.0f, 5.0f},
@@ -20,20 +20,19 @@ int main()
     while (!window_should_close()) {
         update_camera_free(&camera);
 
-        if (is_key_pressed(KEY_SPACE)) mesh_idx = (mesh_idx + 1)%psx.meshes.count;
+        if (is_key_pressed(KEY_SPACE)) mesh_idx = (mesh_idx + 1)%model.meshes.count;
 
         begin_drawing(DARKGRAY); {
             begin_mode_3D(camera); {
                 rotate_y(get_time());
                 scale(0.01, 0.01, 0.01);
-                draw_mesh(psx.meshes.items[mesh_idx]);
+                draw_mesh(model.meshes.items[mesh_idx]);
             } end_mode_3D();
             draw_fps();
         } end_drawing();
     }
 
-    destroy_model(psx);
-
+    destroy_model(model);
     close_window();
 
     return 0;

@@ -34,7 +34,7 @@ layout(push_constant) uniform constants {
 #define MATERIAL_METALLIC_ROUGHNESS (1<<2)
 #define MATERIAL_NORMAL             (1<<3)
 
-#define AMBIENT 0.3f
+#define AMBIENT 0.1f
 
 vec4 srgb_to_linear(vec4 srgb)
 {
@@ -46,8 +46,10 @@ vec4 srgb_to_linear(vec4 srgb)
 void main()
 {
     vec4 color = in_color;
-    if ((pc.material_mask&MATERIAL_ALBEDO) > 0) {
+    bool uses_material = (pc.material_mask&MATERIAL_ALBEDO) > 0;
+    if (uses_material) {
         color = texture(sampler_color, in_uv);
+        if (color.a < 0.01) discard;
     }
 
     if ((pc.attribute_mask&ATTRIBUTE_NORMAL) > 0) {
@@ -58,11 +60,10 @@ void main()
         vec3 to_light = normalize(light_pos - world_pos.xyz);
         float diffuse = max(dot(n, to_light), AMBIENT);
         vec3 rgb = color.rgb*diffuse;
-        // vec3 rgb = color.rgb;
         out_color = vec4(rgb, 1.0);
     } else {
         out_color = color;
     }
 
-    out_color = srgb_to_linear(out_color);
+    if (!uses_material) out_color = srgb_to_linear(out_color);
 }
