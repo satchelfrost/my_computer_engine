@@ -43,10 +43,10 @@ void main()
     break;
     case SHAPE_2D_RECTANGLE_ROUNDED:
         if (!(in_circles || in_cutout)) discard;
+
     break;
     case SHAPE_2D_RECTANGLE:
     break;
     }
     out_color = srgb_to_linear(unpackUnorm4x8(pc.color));
-    
 }
