@@ -109,7 +109,8 @@ bool build_header_only_libraries(Cmd *cmd, const char *target, bool force)
             cmd_append(cmd, (target == "linux") ? "gcc" : "x86_64-w64-mingw32-gcc");
             cmd_append(cmd, hdr_modules[i].impl_define);
             if (hdr_modules[i].api_define) cmd_append(cmd, hdr_modules[i].api_define);
-            cmd_append(cmd, "-x", "c", hdr);
+            if (target == "windows") cmd_append(cmd, "-I./src/external");
+            cmd_append(cmd, "-g", "-x", "c", hdr);
             cmd_append(cmd, "-c", "-o", obj);
             if (!cmd_run(cmd)) return false;
         }

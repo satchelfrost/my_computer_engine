@@ -231,18 +231,17 @@ VkPresentModeKHR r_choose_present_mode(VkPhysicalDevice physical_device, VkSurfa
 /* create a basic render pass with color and depth attachments */
 VkRenderPass r_create_render_pass(VkDevice device, VkFormat depth_format, VkFormat color_format);
 
-#define RVK_MAX_SWAPCHAIN_IMAGES 10
 typedef struct {
     VkSwapchainKHR handle;
-    VkImage images[RVK_MAX_SWAPCHAIN_IMAGES];
-    VkImageView image_views[RVK_MAX_SWAPCHAIN_IMAGES];
-    VkFramebuffer framebuffers[RVK_MAX_SWAPCHAIN_IMAGES];
+    VkImage *images;
+    uint32_t image_count;
+    VkImageView *image_views;
+    VkFramebuffer *framebuffers;
     VkSurfaceFormatKHR surface_format; // TODO: probably don't need to store
     VkImage depth_image;
     VkDeviceMemory depth_image_memory;
     VkImageView depth_image_view;
     VkFormat depth_format; // TODO: probably don't need to store
-    uint32_t image_count;
     bool resized;
     VkExtent2D extent;
     VkRenderPass render_pass;
@@ -902,12 +901,11 @@ Rvk_Swapchain r_create_rvk_swapchain(Rvk_Device device, VkSurfaceKHR surface, in
     Rvk_Swapchain swapchain = {
         .surface_format = r_choose_swapchain_surface_format(device.physical, surface),
         .extent         = r_suggest_swapchain_extent(device.physical, surface, width, height),
-        .image_count    = r_get_suggested_image_count(device.physical, surface),
     };
 
     if (!vk_create_swapchain_khr(device.logical, NULL, &swapchain.handle,
                                  .surface = surface,
-                                 .minImageCount = swapchain.image_count, // only a suggestion not guaranteed
+                                 .minImageCount = r_get_suggested_image_count(device.physical, surface),
                                  .imageFormat = swapchain.surface_format.format,
                                  .imageColorSpace = swapchain.surface_format.colorSpace,
                                  .imageExtent = swapchain.extent,
@@ -921,9 +919,10 @@ Rvk_Swapchain r_create_rvk_swapchain(Rvk_Device device, VkSurfaceKHR surface, in
 
     /* query ACTUAL image count */
     RVK_ASSERT(RVK(vkGetSwapchainImagesKHR(device.logical, swapchain.handle, &swapchain.image_count, NULL)));
-    RVK_ASSERT(swapchain.image_count <= RVK_MAX_SWAPCHAIN_IMAGES);
-    RVK_ASSERT(RVK(vkGetSwapchainImagesKHR(device.logical, swapchain.handle, &swapchain.image_count,
-                                           swapchain.images)));
+    swapchain.images       = malloc(swapchain.image_count*sizeof(*swapchain.images));
+    swapchain.image_views  = malloc(swapchain.image_count*sizeof(*swapchain.image_views));
+    swapchain.framebuffers = malloc(swapchain.image_count*sizeof(*swapchain.framebuffers));
+    RVK_ASSERT(RVK(vkGetSwapchainImagesKHR(device.logical, swapchain.handle, &swapchain.image_count, swapchain.images)));
 
     /* create the image views for the swapchain */
     for (size_t i = 0; i < swapchain.image_count; i++) {
@@ -975,6 +974,9 @@ void r_destroy_rvk_swapchain(VkDevice device, Rvk_Swapchain swapchain)
     for (size_t i = 0; i < swapchain.image_count; i++)
         vkDestroyImageView(device, swapchain.image_views[i], NULL);
     vkDestroySwapchainKHR(device, swapchain.handle, NULL);
+    free(swapchain.images);
+    free(swapchain.image_views);
+    free(swapchain.framebuffers);
 }
 
 VkPipelineShaderStageCreateInfo r_create_vertex_stage_ci(VkDevice device, size_t code_size, const uint32_t *code)
