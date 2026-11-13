@@ -143,6 +143,65 @@ void populate_attributes(Mesh *mesh, cgltf_attribute attribute)
     }
 }
 
+Bones load_gltf_bones(cgltf_skin skin)
+{
+    Bones bones = {0};
+
+    for (size_t i  = 0; i < skin.joints_count; i++) {
+        Bone bone = {.matrix = MatrixIdentity()};
+
+        /* bone name */
+        cgltf_node node = *skin.joints[i];
+        if (node.name != NULL) snprintf(bone.name, sizeof(bone.name), "%s", node.name);
+
+        /* determine parent */
+        int parent_idx = -1;
+        cgltf_node *ancestor = node.parent;
+        while (ancestor != NULL && parent_idx == -1) {
+            for (size_t j = 0; j < skin.joints_count; j++) {
+                if (skin.joints[j] == ancestor) {
+                    parent_idx = j;
+                    break;
+                }
+            }
+            if (parent_idx == -1) ancestor = ancestor->parent;
+        }
+        bone.parent = parent_idx;
+
+        /* base pose */
+        Matrix bind_matrix = {0};
+        cgltf_float inverse_bind_transform[16] = {0};
+
+        if ((skin.inverse_bind_matrices) &&
+            (skin.inverse_bind_matrices->count >= skin.joints_count) &&
+            cgltf_accessor_read_float(skin.inverse_bind_matrices, i, inverse_bind_transform, 16)) {
+            Matrix inverse_bind_matrix = {
+                inverse_bind_transform[0], inverse_bind_transform[4], inverse_bind_transform[8],  inverse_bind_transform[12],
+                inverse_bind_transform[1], inverse_bind_transform[5], inverse_bind_transform[9],  inverse_bind_transform[13],
+                inverse_bind_transform[2], inverse_bind_transform[6], inverse_bind_transform[10], inverse_bind_transform[14],
+                inverse_bind_transform[3], inverse_bind_transform[7], inverse_bind_transform[11], inverse_bind_transform[15]
+            };
+            bind_matrix = MatrixInvert(inverse_bind_matrix);
+        } else {
+            cgltf_float world_transform[16] = {0};
+            cgltf_node_transform_world(skin.joints[i], world_transform);
+            Matrix world_matrix = {
+                world_transform[0], world_transform[4], world_transform[8],  world_transform[12],
+                world_transform[1], world_transform[5], world_transform[9],  world_transform[13],
+                world_transform[2], world_transform[6], world_transform[10], world_transform[14],
+                world_transform[3], world_transform[7], world_transform[11], world_transform[15]
+            };
+            bind_matrix = world_matrix;
+        }
+        MatrixDecompose(bind_matrix, &bone.base_pose.translation, &bone.base_pose.rotation, &bone.base_pose.scale);
+
+        da_append(&bones, bone);
+    }
+
+    return bones;
+}
+
+
 Model load_model_gltf_into_memory(const char *file_path)
 {
     Model model = {0};
@@ -258,6 +317,14 @@ Model load_model_gltf_into_memory(const char *file_path)
         }
     } temp_rewind(checkpoint);
 
+    /* load animation data */
+    if (data->skins_count > 0) {
+        model.bones = load_gltf_bones(data->skins[0]);
+        if (data->skins_count > 1) printf("WARNING: skin count > 1, only 1 supported\n");
+    }
+
+    // TODO: may need to check if mesh was not given any bone assignment, but is a child of a bone node.
+
 end:
     sb_free(sb);
     cgltf_free(data);
@@ -270,33 +337,6 @@ Model load_model_gltf(const char *file_path)
     Model model = load_model_gltf_into_memory(file_path);
     load_model_gpu(&model);
     return model;
-}
-
-Bones load_gltf_bones(cgltf_skin skin)
-{
-    Bones bones = {0};
-
-    for (size_t i  = 0; i < skin.joints_count; i++) {
-        Bone bone = {0};
-        cgltf_node node = *skin.joints[i];
-        if (node.name != NULL) snprintf(bone.name, sizeof(bone.name), "%s", node.name);
-
-        int parent_idx = -1;
-        cgltf_node *ancestor = node.parent;
-        while (ancestor != NULL && parent_idx == -1) {
-            for (size_t j = 0; j < skin.joints_count; j++) {
-                if (skin.joints[j] == ancestor) {
-                    parent_idx = j;
-                    break;
-                }
-            }
-            if (parent_idx == -1) ancestor = ancestor->parent;
-        }
-        bone.parent = parent_idx;
-        da_append(&bones, bone);
-    }
-
-    return bones;
 }
 
 bool get_pose_at_time_gltf(cgltf_interpolation_type interp_type, cgltf_accessor *input, cgltf_accessor *output, float time, void *data)
@@ -585,7 +625,7 @@ Model_Animations load_model_animations_gltf(const char *file_path)
                                                    bone_channels[k].rotate->sampler->input,
                                                    bone_channels[k].rotate->sampler->output,
                                                    time,
-                                                   &translation)) {
+                                                   &rotation)) {
                             printf("ERROR: MODEL %s failed to load rotate pose data for bone %s\n", file_path, bones.items[k].name);
                             assert(0);
                         }
@@ -595,7 +635,7 @@ Model_Animations load_model_animations_gltf(const char *file_path)
                                                    bone_channels[k].scale->sampler->input,
                                                    bone_channels[k].scale->sampler->output,
                                                    time,
-                                                   &translation)) {
+                                                   &scale)) {
                             printf("ERROR: MODEL %s failed to load scale pose data for bone %s\n", file_path, bones.items[k].name);
                             assert(0);
                         }

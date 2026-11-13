@@ -291,7 +291,7 @@ void close_window()
     for (size_t i = 0; i < PIPELINE_COUNT; i++)
         destroy_pipeline(standard.pipelines[i]);
 
-    destroy_model(standard.shapes_3D);
+    unload_model(standard.shapes_3D);
 
     for (size_t i = 0; i < DS_LAYOUT_COUNT; i++)
         vkDestroyDescriptorSetLayout(vk_ctx.device.logical, standard.ds_layouts[i], NULL);
@@ -1161,6 +1161,21 @@ Rvk_Buffer create_index_buffer(size_t size, void *indices)
     return r_create_index_buffer(vk_ctx.device, size, indices);
 }
 
+Rvk_Buffer create_mapped_staging_buffer(size_t size)
+{
+    return r_create_mapped_staging_buffer(vk_ctx.device, size);
+}
+
+Rvk_Buffer create_mapped_uniform_buffer(size_t size)
+{
+    return r_create_mapped_uniform_buffer(vk_ctx.device, size);
+}
+
+Rvk_Buffer create_mapped_compute_buffer(size_t size)
+{
+    return r_create_mapped_compute_buffer(vk_ctx.device, size);
+}
+
 Rvk_Pipeline create_triangle_rvk_pipeline(const char *vert_shader, const char *frag_shader, VkPipelineLayout layout, VkPipelineVertexInputStateCreateInfo vert_input)
 {
     Rvk_Pipeline pl = {.layout = layout};
@@ -1322,7 +1337,12 @@ void init_draw_model_uniform()
     standard.draw_model.uniform.buffer = r_create_mapped_uniform_buffer(vk_ctx.device, sizeof(standard.draw_model.uniform.data));
 }
 
-void destroy_model(Model model)
+bool rvk_buffers_equal(Rvk_Buffer a, Rvk_Buffer b)
+{
+    return a.info.buffer == b.info.buffer;
+}
+
+void unload_model(Model model)
 {
     for (size_t i = 0; i < model.meshes.count; i++) {
         Mesh mesh = model.meshes.items[i];
@@ -1336,18 +1356,20 @@ void destroy_model(Model model)
         destroy_buffer(mesh.gpu.vertex);
         destroy_buffer(mesh.gpu.index);
 
-        /* we check before destroying here because a phony buffer might be used and we don't want to
-         * destroy that twice */
-        if (mesh.gpu.mask & 1<<ATTRIBUTE_NORMAL) destroy_buffer(mesh.gpu.normal);
-        if (mesh.gpu.mask & 1<<ATTRIBUTE_UV)     destroy_buffer(mesh.gpu.uv);
-        if (mesh.gpu.mask & 1<<ATTRIBUTE_TANGET) destroy_buffer(mesh.gpu.tanget);
-        if (mesh.gpu.mask & 1<<ATTRIBUTE_COLOR)  destroy_buffer(mesh.gpu.color);
-        if (mesh.gpu.mask & 1<<ATTRIBUTE_JOINT)  destroy_buffer(mesh.gpu.joint);
-        if (mesh.gpu.mask & 1<<ATTRIBUTE_WEIGHT) destroy_buffer(mesh.gpu.weight);
+        /* only destroy the phony buffer once */
+        Rvk_Buffer phony = model.phony.buffer;
+        if (!rvk_buffers_equal(mesh.gpu.normal,         phony)) destroy_buffer(mesh.gpu.normal);
+        if (!rvk_buffers_equal(mesh.gpu.uv,             phony)) destroy_buffer(mesh.gpu.uv);
+        if (!rvk_buffers_equal(mesh.gpu.tanget,         phony)) destroy_buffer(mesh.gpu.tanget);
+        if (!rvk_buffers_equal(mesh.gpu.color,          phony)) destroy_buffer(mesh.gpu.color);
+        if (!rvk_buffers_equal(mesh.gpu.joint,          phony)) destroy_buffer(mesh.gpu.joint);
+        if (!rvk_buffers_equal(mesh.gpu.weight,         phony)) destroy_buffer(mesh.gpu.weight);
+        if (!rvk_buffers_equal(mesh.gpu.vertex_staging, phony)) destroy_buffer(mesh.gpu.vertex_staging);
+        if (!rvk_buffers_equal(mesh.gpu.normal_staging, phony)) destroy_buffer(mesh.gpu.normal_staging);
     }
 
     for (size_t i = 0; i < model.textures.count; i++) {
-        free(model.images.items[i].data); // TODO: probably want to destroy this sooner
+        free(model.images.items[i].data);
         destroy_rvk_texture(model.textures.items[i]);
     }
 
@@ -1423,8 +1445,12 @@ void load_model_gpu(Model *model)
             assert(mesh->gpu.weight.info.buffer == NULL);
             mesh->gpu.weight = create_compute_buffer_with_data(size, mesh->cpu.weights.items);
             mesh->gpu.mask |= 1<<ATTRIBUTE_WEIGHT;
-        } else mesh->gpu.weight = model->phony.buffer;
 
+            /* create staging buffers (vertex/normal) for CPU skinning */
+            mesh->gpu.vertex_staging = create_mapped_staging_buffer(size);
+            size = mesh->cpu.normals.count*sizeof(*mesh->cpu.normals.items);
+            if (size) mesh->gpu.normal_staging = create_mapped_staging_buffer(size);
+        } else mesh->gpu.weight = model->phony.buffer;
 
         /* get the image info */
         VkDescriptorImageInfo *albedo_image_info = NULL;

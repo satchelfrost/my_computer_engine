@@ -415,14 +415,14 @@ typedef enum {
 
 typedef struct {
     struct {
-        struct {  Vector3 *items; size_t count; size_t capacity; } positions;
-        struct { uint32_t *items; size_t count; size_t capacity; } indices;
-        struct {  Vector3 *items; size_t count; size_t capacity; } normals;
-        struct {  Vector2 *items; size_t count; size_t capacity; } uvs;
-        struct {  Vector4 *items; size_t count; size_t capacity; } tangets;
-        struct { uint32_t *items; size_t count; size_t capacity; } colors;
-        struct {  uint8_t *items; size_t count; size_t capacity; } joints;
-        struct {  Vector4 *items; size_t count; size_t capacity; } weights;
+        struct { Vector3 *items; size_t count; size_t capacity;} positions;
+        struct {uint32_t *items; size_t count; size_t capacity;} indices;
+        struct { Vector3 *items; size_t count; size_t capacity;} normals;
+        struct { Vector2 *items; size_t count; size_t capacity;} uvs;
+        struct { Vector4 *items; size_t count; size_t capacity;} tangets;
+        struct {uint32_t *items; size_t count; size_t capacity;} colors;
+        struct { uint8_t *items; size_t count; size_t capacity;} joints;
+        struct { Vector4 *items; size_t count; size_t capacity;} weights;
     } cpu;
 
     struct {
@@ -443,6 +443,8 @@ typedef struct {
         Rvk_Buffer color;
         Rvk_Buffer joint;
         Rvk_Buffer weight;
+        Rvk_Buffer vertex_staging;
+        Rvk_Buffer normal_staging;
         VkDescriptorSet ds;
     } gpu;
 } Mesh;
@@ -456,24 +458,27 @@ typedef struct {
 typedef struct {
     char name[32];
     int parent;
+    Transform base_pose;
+    Transform current_pose;
+    Matrix matrix;
 } Bone;
 
 typedef struct { Bone *items; size_t count; size_t capacity; } Bones;
 
 typedef struct {
-    Bone bones;
-    Transform base_transform;
-} Model_Skeleton;
+    struct {Mesh         *items; size_t count; size_t capacity;} meshes;
+    struct {Rvk_Texture  *items; size_t count; size_t capacity;} textures;
+    struct {Image        *items; size_t count; size_t capacity;} images;
 
-typedef struct {
-    struct { Mesh         *items; size_t count; size_t capacity; } meshes;
-    struct { Rvk_Texture  *items; size_t count; size_t capacity; } textures;
-    struct { Image *items; size_t count; size_t capacity; } images;
-    struct { Rvk_Texture texture; Rvk_Buffer buffer; Image image; uint32_t data; } phony;
+    /* if data isn't available we will use phony data so that the shader is happy */
+    struct {
+        Rvk_Texture texture;
+        Rvk_Buffer buffer;
+        Image image;
+        uint32_t data;
+    } phony;
 
-    Model_Skeleton skeleton;     // TODO: unimplemented
-    Transform current_transform; // TODO: unimplemented
-    Matrix *bone_matrices;       // TODO: unimplemented
+    Bones bones;
 } Model;
 
 typedef struct {
@@ -499,7 +504,7 @@ Model load_model_gltf(const char *file_path);
 Model load_model_gltf_into_memory(const char *file_path);
 Model_Animations load_model_animations_gltf(const char *file_path);
 void load_model_gpu(Model *model);
-void destroy_model(Model model);
+void unload_model(Model model);
 void draw_model(Model model);
 void draw_mesh(Mesh mesh);
 
@@ -520,9 +525,9 @@ Mesh get_standard_shape();
 /////////////////////////////////////////////
 Rvk_Buffer create_vertex_buffer(size_t size, void *vertices);
 Rvk_Buffer create_index_buffer(size_t size, void *indices);
-//Rvk_Buffer create_mapped_staging_buffer(size_t size); // TODO
-//Rvk_Buffer create_mapped_compute_buffer(size_t size); // TODO
-//Rvk_Buffer create_mapped_uniform_buffer(size_t size); // TODO
+Rvk_Buffer create_mapped_staging_buffer(size_t size);
+Rvk_Buffer create_mapped_uniform_buffer(size_t size);
+Rvk_Buffer create_mapped_compute_buffer(size_t size);
 Rvk_Buffer create_compute_buffer(size_t size);
 Rvk_Buffer create_compute_buffer_with_data(size_t size, void *data);
 void destroy_buffer(Rvk_Buffer buff);

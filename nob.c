@@ -160,12 +160,22 @@ bool build_my_computer_engine(Cmd *cmd, bool force, const char *target)
     const char *o = temp_sprintf("%smy_computer_engine.o", build_dir);
     const char *c = temp_sprintf(ENGINE"my_computer_engine.c");
 
+    int hdr_module_touched = 0;
+    for (size_t i = 0; i < ARRAY_LEN(hdr_modules); i++) {
+        const char *hdr_obj = temp_sprintf("%s%s.o", (target == "linux") ? LINUX : WINDOWS, hdr_modules[i].name);
+        hdr_module_touched = needs_rebuild1(o, hdr_obj);
+        if (hdr_module_touched < 0) {
+            nob_log(ERROR, "needs rebuild failed for for my_computer_engine %s", hdr_obj);
+            return false;
+        }
+        if (hdr_module_touched) break;
+    }
     int my_computer_engine_touched = needs_rebuild(o, my_computer_engine_srcs, ARRAY_LEN(my_computer_engine_srcs));
     if (my_computer_engine_touched < 0) {
         nob_log(ERROR, "needs rebuild failed for my_computer_engine");
         return false;
     }
-    if (!my_computer_engine_touched && !force) return true;
+    if (!my_computer_engine_touched && !force && !hdr_module_touched) return true;
 
     cmd_append(cmd, (target == "linux") ? "gcc" : "x86_64-w64-mingw32-gcc", "-Wall", "-Wextra", "-g");
     if (target == "linux") cmd_append(cmd, "-DVULKAN_VALIDATION_ON"); // only use validation if not windows

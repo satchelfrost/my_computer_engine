@@ -32,7 +32,7 @@ int main()
         } end_drawing();
     }
 
-    destroy_model(model);
+    unload_model(model);
     close_window();
 
     return 0;

@@ -60,7 +60,7 @@ int main()
         end_drawing();
     }
 
-    destroy_model(bunny);
+    unload_model(bunny);
     close_window();
 
     return 0;

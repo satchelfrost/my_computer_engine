@@ -1433,17 +1433,11 @@ defer:
 
 Rvk_Buffer r_create_vertex_buffer(Rvk_Device device, size_t size, void *data)
 {
-    if (!device.physical) return (Rvk_Buffer){0};
-    if (!device.logical) return (Rvk_Buffer){0};
-    if (!device.command_pool) return (Rvk_Buffer){0};
-
-    /* book keeping */
     Rvk_Buffer buff = {.info.range = size};
 
-    /* create a buffer */
-    if (!vk_create_buffer(device.logical, NULL, &buff.info.buffer,
-                          .usage = VK_BUFFER_USAGE_TRANSFER_DST_BIT|VK_BUFFER_USAGE_VERTEX_BUFFER_BIT,
-                          .size = size)) return (Rvk_Buffer){0};
+    RVK_ASSERT(vk_create_buffer(device.logical, NULL, &buff.info.buffer,
+                                .usage = VK_BUFFER_USAGE_TRANSFER_DST_BIT|VK_BUFFER_USAGE_VERTEX_BUFFER_BIT,
+                                .size = size));
     RVK_ASSERT((buff.memory = r_allocate_and_bind_buffer_memory(device,
                                                                 VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
                                                                 buff.info.buffer)));
@@ -1520,13 +1514,10 @@ Rvk_Buffer r_create_mapped_staging_buffer(Rvk_Device device, size_t size)
 {
     Rvk_Buffer stg_buff = {.info.range = size};
     RVK_ASSERT(vk_create_buffer(device.logical, NULL, &stg_buff.info.buffer,
-                          .usage = VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
-                          .size = size));
-    RVK_ASSERT((stg_buff.memory = r_allocate_and_bind_buffer_memory(device,
-                                                                    VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT|
-                                                                    VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
-                                                                    stg_buff.info.buffer)));
-    /* copy data to staging buffer */
+                                .usage = VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
+                                .size = size));
+    VkMemoryPropertyFlags mem_props = VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT|VK_MEMORY_PROPERTY_HOST_COHERENT_BIT;
+    RVK_ASSERT((stg_buff.memory = r_allocate_and_bind_buffer_memory(device, mem_props, stg_buff.info.buffer)));
     RVK_ASSERT(RVK(vkMapMemory(device.logical, stg_buff.memory, 0, size, 0, &stg_buff.mapped)));
 
     return stg_buff;
@@ -1534,17 +1525,10 @@ Rvk_Buffer r_create_mapped_staging_buffer(Rvk_Device device, size_t size)
 
 Rvk_Buffer r_create_mapped_uniform_buffer(Rvk_Device device, size_t size)
 {
-    if (!device.physical) return (Rvk_Buffer){0};
-    if (!device.logical) return (Rvk_Buffer){0};
-    if (!device.command_pool) return (Rvk_Buffer){0};
-
-    /* book keeping */
     Rvk_Buffer buff = {.info.range = size};
-
-    /* create a uniform buffer */
-    if (!vk_create_buffer(device.logical, NULL, &buff.info.buffer,
-                          .usage = VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT,
-                          .size = size)) return (Rvk_Buffer){0};
+    RVK_ASSERT(vk_create_buffer(device.logical, NULL, &buff.info.buffer,
+                                .usage = VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT,
+                                .size = size));
     VkMemoryPropertyFlags mem_props = VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT|VK_MEMORY_PROPERTY_HOST_COHERENT_BIT;
     RVK_ASSERT((buff.memory = r_allocate_and_bind_buffer_memory(device, mem_props, buff.info.buffer)));
     RVK_ASSERT(RVK(vkMapMemory(device.logical, buff.memory, 0, size, 0, &buff.mapped)));
@@ -1648,27 +1632,16 @@ Rvk_Buffer r_create_compute_buffer(Rvk_Device device, size_t size)
 
 Rvk_Buffer r_create_mapped_compute_buffer(Rvk_Device device, size_t size)
 {
-    if (!device.physical) return (Rvk_Buffer){0};
-    if (!device.logical) return (Rvk_Buffer){0};
-    if (!device.command_pool) return (Rvk_Buffer){0};
-
-    /* book keeping */
     Rvk_Buffer buff = {.info.range = size};
-
-    /* create a buffer */
-    if (!vk_create_buffer(device.logical, NULL, &buff.info.buffer,
-                          .usage = VK_BUFFER_USAGE_TRANSFER_DST_BIT|   // destination of staging buffer
-                                   VK_BUFFER_USAGE_TRANSFER_SRC_BIT|   // in case we want to transfer back to host
-                                   VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, // compute buffer (ssbo)
-                          .size = size)) return (Rvk_Buffer){0};
-    RVK_ASSERT((buff.memory = r_allocate_and_bind_buffer_memory(device,
-                                                                VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT|
-                                                                VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
-                                                                buff.info.buffer)));
+    VkBufferUsageFlags usage = VK_BUFFER_USAGE_TRANSFER_DST_BIT|   // destination of staging buffer
+                               VK_BUFFER_USAGE_TRANSFER_SRC_BIT|   // in case we want to transfer back to host
+                               VK_BUFFER_USAGE_STORAGE_BUFFER_BIT; // compute buffer (ssbo)
+    RVK_ASSERT(vk_create_buffer(device.logical, NULL, &buff.info.buffer, .usage = usage, .size = size));
+    VkMemoryPropertyFlags mem_props = VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT|VK_MEMORY_PROPERTY_HOST_COHERENT_BIT;
+    RVK_ASSERT((buff.memory = r_allocate_and_bind_buffer_memory(device, mem_props, buff.info.buffer)));
     RVK_ASSERT(RVK(vkMapMemory(device.logical, buff.memory, 0, size, 0, &buff.mapped)));
 
     return buff;
-
 }
 
 void r_map_buffer(Rvk_Device device, Rvk_Buffer *buffer)

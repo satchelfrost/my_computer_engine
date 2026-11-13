@@ -32,7 +32,7 @@ int main()
         } end_drawing();
     }
 
-    destroy_model(robot);
+    unload_model(robot);
     close_window();
     return 0;
 #endif
