@@ -15,6 +15,8 @@
 #include "geometry.c"
 #include "audio.c"
 
+#define CLAMP(val, min, max) ((val) < (min)) ? (min) : (((val) > (max)) ? (max) : (val))
+
 #ifndef Z_NEAR
     #define Z_NEAR 0.1
 #endif
@@ -1344,6 +1346,7 @@ bool rvk_buffers_equal(Rvk_Buffer a, Rvk_Buffer b)
 
 void unload_model(Model model)
 {
+    //TODO("properly unload key frames");
     for (size_t i = 0; i < model.meshes.count; i++) {
         Mesh mesh = model.meshes.items[i];
         da_free(mesh.cpu.positions);
@@ -1364,8 +1367,6 @@ void unload_model(Model model)
         if (!rvk_buffers_equal(mesh.gpu.color,          phony)) destroy_buffer(mesh.gpu.color);
         if (!rvk_buffers_equal(mesh.gpu.joint,          phony)) destroy_buffer(mesh.gpu.joint);
         if (!rvk_buffers_equal(mesh.gpu.weight,         phony)) destroy_buffer(mesh.gpu.weight);
-        if (!rvk_buffers_equal(mesh.gpu.vertex_staging, phony)) destroy_buffer(mesh.gpu.vertex_staging);
-        if (!rvk_buffers_equal(mesh.gpu.normal_staging, phony)) destroy_buffer(mesh.gpu.normal_staging);
     }
 
     for (size_t i = 0; i < model.textures.count; i++) {
@@ -1400,6 +1401,7 @@ void load_model_gpu(Model *model)
         /* vertex and index buffers are required, everything else is optional */
         size_t size = mesh->cpu.positions.count*sizeof(*mesh->cpu.positions.items);
         assert(size);
+        //TODO("create_host_visible_vertex_buffer if weights exist");
         mesh->gpu.vertex = create_vertex_buffer(size, mesh->cpu.positions.items);
         size = mesh->cpu.indices.count*sizeof(*mesh->cpu.indices.items);
         assert(size);
@@ -1408,6 +1410,7 @@ void load_model_gpu(Model *model)
         size = mesh->cpu.normals.count*sizeof(*mesh->cpu.normals.items);
         if (size) {
             assert(mesh->gpu.normal.info.buffer == NULL);
+            //TODO("create_mapped_compute_buffer if weights exist");
             mesh->gpu.normal = create_compute_buffer_with_data(size, mesh->cpu.normals.items);
             mesh->gpu.mask |= 1<<ATTRIBUTE_NORMAL;
         } else mesh->gpu.normal = model->phony.buffer;
@@ -1445,11 +1448,6 @@ void load_model_gpu(Model *model)
             assert(mesh->gpu.weight.info.buffer == NULL);
             mesh->gpu.weight = create_compute_buffer_with_data(size, mesh->cpu.weights.items);
             mesh->gpu.mask |= 1<<ATTRIBUTE_WEIGHT;
-
-            /* create staging buffers (vertex/normal) for CPU skinning */
-            mesh->gpu.vertex_staging = create_mapped_staging_buffer(size);
-            size = mesh->cpu.normals.count*sizeof(*mesh->cpu.normals.items);
-            if (size) mesh->gpu.normal_staging = create_mapped_staging_buffer(size);
         } else mesh->gpu.weight = model->phony.buffer;
 
         /* get the image info */
@@ -2172,4 +2170,69 @@ void set_target_fps(int fps)
     if (fps < 1) frame_ctx.time.target = 0.0;
     else frame_ctx.time.target = 1.0 / (double) fps;
     printf("target fps: %02.03f ms\n", (float) frame_ctx.time.target*1000.0f);
+}
+
+void update_model_animation_bones(Model model, Model_Animation anim, float frame)
+{
+    if (!(anim.key_frames.count && model.bones.count)) return;
+
+    size_t curr_frame = frame;
+    size_t next_frame = frame + 1;
+    float blend = CLAMP(frame - curr_frame, 0.0, 1.0);
+    if (curr_frame >= anim.key_frames.count) curr_frame = curr_frame%anim.key_frames.count;
+    if (next_frame >= anim.key_frames.count) next_frame = next_frame%anim.key_frames.count;
+
+    Key_Frame key_frame_curr = anim.key_frames.items[curr_frame];
+    Key_Frame key_frame_next = anim.key_frames.items[curr_frame];
+
+    Matrix bind_pose_matrix = {0};
+    Matrix curr_pose_matrix = {0};
+
+    for (size_t i = 0; i < model.bones.count; i++) {
+        Bone *bone = &model.bones.items[i];
+        Transform curr_t = key_frame_curr.items[i];
+        Transform next_t = key_frame_next.items[i];
+
+        /* store the current pose */
+        bone->curr_pose.translation = Vector3Lerp(curr_t.translation, next_t.translation, blend);
+        bone->curr_pose.rotation    = QuaternionSlerp(curr_t.rotation, next_t.rotation, blend);
+        bone->curr_pose.scale       = Vector3Lerp(curr_t.scale, next_t.scale, blend);
+
+        /* bind pose matrix */
+        Matrix translate = MatrixTranslate(bone->bind_pose.translation.x,
+                                           bone->bind_pose.translation.y,
+                                           bone->bind_pose.translation.z);
+        Matrix rotate    = QuaternionToMatrix(bone->bind_pose.rotation);
+        Matrix scale     = MatrixScale(bone->bind_pose.scale.x,
+                                       bone->bind_pose.scale.y,
+                                       bone->bind_pose.scale.z);
+
+        bind_pose_matrix = MatrixMultiply(MatrixMultiply(scale, rotate), translate); // order -> S R T
+
+        /* current pose matrix */
+        translate = MatrixTranslate(bone->curr_pose.translation.x,
+                                    bone->curr_pose.translation.y,
+                                    bone->curr_pose.translation.z);
+        rotate    = QuaternionToMatrix(bone->curr_pose.rotation);
+        scale     = MatrixScale(bone->curr_pose.scale.x,
+                                bone->curr_pose.scale.y,
+                                bone->curr_pose.scale.z);
+        curr_pose_matrix = MatrixMultiply(MatrixMultiply(scale, rotate), translate); // order -> S R T
+
+        /* runtime bone matrix */
+        bone->matrix = MatrixMultiply(MatrixInvert(bind_pose_matrix), curr_pose_matrix);
+    }
+}
+
+void update_model_animation_vertex_buffers(Model model)
+{
+    UNUSED(model);
+}
+
+void update_model_animation(Model model, Model_Animation anim, float frame)
+{
+    if (anim.key_frames.count && model.bones.count) {
+        update_model_animation_bones(model, anim, frame);
+        update_model_animation_vertex_buffers(model);
+    }
 }

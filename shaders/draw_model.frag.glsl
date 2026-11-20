@@ -27,7 +27,7 @@ layout(push_constant) uniform constants {
 #define ATTRIBUTE_TANGET (1<<2)
 #define ATTRIBUTE_COLOR  (1<<3)
 #define ATTRIBUTE_JOINT  (1<<4)
-#define ATTRIBUTE_WEIGHT (1<<4)
+#define ATTRIBUTE_WEIGHT (1<<5)
 
 #define MATERIAL_NO_TEXTURES        (1<<0)
 #define MATERIAL_ALBEDO             (1<<1)

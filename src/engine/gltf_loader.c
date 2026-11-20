@@ -193,7 +193,7 @@ Bones load_gltf_bones(cgltf_skin skin)
             };
             bind_matrix = world_matrix;
         }
-        MatrixDecompose(bind_matrix, &bone.base_pose.translation, &bone.base_pose.rotation, &bone.base_pose.scale);
+        MatrixDecompose(bind_matrix, &bone.bind_pose.translation, &bone.bind_pose.rotation, &bone.bind_pose.scale);
 
         da_append(&bones, bone);
     }
@@ -467,9 +467,9 @@ bool get_pose_at_time_gltf(cgltf_interpolation_type interp_type, cgltf_accessor 
     return true;
 }
 
-void build_pose_from_parent_joints(Bones bones, Key_Frames key_frames)
+void build_pose_from_parent_joints(Bones bones, Transforms transforms)
 {
-    assert(bones.count <= key_frames.count);
+    assert(bones.count <= transforms.count);
     for (size_t i = 0; i < bones.count; i++) {
         Bone bone = bones.items[i];
         if (bone.parent >= 0) {
@@ -477,8 +477,8 @@ void build_pose_from_parent_joints(Bones bones, Key_Frames key_frames)
             if (bone.parent > (int)i) {
                 printf("WARNING: skipping bone, not topologically sorted: bone %zu has parent %d\n", i, bone.parent);
             }
-            Transform *child = &key_frames.items[i];
-            Transform parent = key_frames.items[bone.parent];
+            Transform *child = &transforms.items[i];
+            Transform parent = transforms.items[bone.parent];
 
             child->rotation = QuaternionMultiply(parent.rotation, child->rotation);
             child->scale = Vector3Multiply(parent.scale, child->scale);
@@ -546,11 +546,9 @@ Model_Animations load_model_animations_gltf(const char *file_path)
             }
         }
 
+        Bones bones = load_gltf_bones(skin);
         for (size_t a = 0; a < data->animations_count; a++) {
-            Model_Animation animation = {0};
-            Bones bones = load_gltf_bones(skin);
-            animation.bone_count = bones.count;
-
+            Model_Animation animation = {.bone_count = bones.count};
             cgltf_animation anim_data = data->animations[a];
             Channels *bone_channels = calloc(bones.count, sizeof(Channels));
             float anim_duration = 0.0f;
@@ -598,6 +596,7 @@ Model_Animations load_model_animations_gltf(const char *file_path)
 
             size_t key_frame_count = anim_duration*GLTF_FRAMERATE + 1;
             for (size_t j = 0; j < key_frame_count; j++) {
+                Key_Frame key_frame = {0};
                 float time = j/GLTF_FRAMERATE;
 
                 for (size_t k = 0; k < bones.count; k++) {
@@ -646,19 +645,20 @@ Model_Animations load_model_animations_gltf(const char *file_path)
                     Matrix T = MatrixTranslate(translation.x, translation.y, translation.z);
                     Matrix joint_local = MatrixMultiply(MatrixMultiply(S, R), T);
                     Matrix combined = MatrixMultiply(joint_local, ext_offset[k]);
-                    Transform key_frame;
-                    MatrixDecompose(combined, &key_frame.translation, &key_frame.rotation, &key_frame.scale);
-                    da_append(&animation.key_frames, key_frame);
+                    Transform t = {0};
+                    MatrixDecompose(combined, &t.translation, &t.rotation, &t.scale);
+                    da_append(&key_frame, t);
                 }
 
-                build_pose_from_parent_joints(bones, animation.key_frames);
+                build_pose_from_parent_joints(bones, key_frame);
+                da_append(&animation.key_frames, key_frame);
             }
 
             da_append(&animations, animation);
             free(bone_channels);
-            da_free(bones);
         }
 
+        da_free(bones);
         free(ext_offset);
     }
 

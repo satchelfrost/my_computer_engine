@@ -5,14 +5,16 @@
 
 int main()
 {
-#if 1
-    Model_Animations anims = load_model_animations_gltf(GLTF_MODEL);
-    printf("loaded %zu animations from %s\n", anims.count, GLTF_MODEL);
-    return 0;
-
-#else
     init_window(500, 500, "gltf animation");
-    Model robot = load_model_gltf(GLTF_MODEL);
+    Model model = load_model_gltf(GLTF_MODEL);
+    Model_Animations anims = load_model_animations_gltf(GLTF_MODEL);
+
+    if (anims.count) {
+        printf("loaded %zu animations from %s\n", anims.count, GLTF_MODEL);
+    } else {
+        printf("model %s does not contain any animations\n", GLTF_MODEL);
+        return 1;
+    }
 
     Camera camera = {
         .position = {0.0f, 7.0f, 10.0f},
@@ -21,19 +23,25 @@ int main()
         .fovy     = 45.0f,
     };
 
+    for (size_t i = 0; i < anims.count; i++) {
+        Model_Animation animation = anims.items[i];
+        printf("animation %s - key frame count %zu\n", animation.name, animation.key_frames.count);
+    }
+
+    update_model_animation(model, anims.items[0], 0);
+
     while (!window_should_close()) {
         begin_drawing(BLUE); {
             begin_mode_3D(camera); {
-                rotate_y(get_time());
-                draw_model(robot);
+                //rotate_y(get_time());
+                draw_model(model);
             } end_mode_3D();
 
             draw_fps();
         } end_drawing();
     }
 
-    unload_model(robot);
+    unload_model(model);
     close_window();
     return 0;
-#endif
 }

@@ -435,16 +435,14 @@ typedef struct {
 
     struct {
         uint32_t mask;
-        Rvk_Buffer vertex;
         Rvk_Buffer index;
+        Rvk_Buffer vertex;
         Rvk_Buffer normal;
         Rvk_Buffer uv;
         Rvk_Buffer tanget;
         Rvk_Buffer color;
         Rvk_Buffer joint;
         Rvk_Buffer weight;
-        Rvk_Buffer vertex_staging;
-        Rvk_Buffer normal_staging;
         VkDescriptorSet ds;
     } gpu;
 } Mesh;
@@ -456,10 +454,16 @@ typedef struct {
 } Transform;
 
 typedef struct {
+    Transform *items;
+    size_t count;
+    size_t capacity;
+} Transforms;
+
+typedef struct {
     char name[32];
     int parent;
-    Transform base_pose;
-    Transform current_pose;
+    Transform bind_pose;
+    Transform curr_pose;
     Matrix matrix;
 } Bone;
 
@@ -481,8 +485,10 @@ typedef struct {
     Bones bones;
 } Model;
 
+typedef Transforms Key_Frame;
+
 typedef struct {
-    Transform *items;
+    Key_Frame *items;
     size_t count;
     size_t capacity; 
 } Key_Frames;
@@ -503,6 +509,7 @@ Model load_model_obj_into_memory(const char *file_path);
 Model load_model_gltf(const char *file_path);
 Model load_model_gltf_into_memory(const char *file_path);
 Model_Animations load_model_animations_gltf(const char *file_path);
+void update_model_animation(Model model, Model_Animation anim, float frame);
 void load_model_gpu(Model *model);
 void unload_model(Model model);
 void draw_model(Model model);
