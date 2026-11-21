@@ -313,7 +313,14 @@ bool window_should_close()
     glfwPollEvents();
 
     /* wait for vulkan device to idle so that we can destroy stuff without getting validation warnings */
-    if (result) wait_idle();
+    if (result) {
+        wait_idle();
+    } else {
+        r_wait_reset_fence(vk_ctx.device.logical, &vk_ctx.device.fences[0]);
+        r_acquire_next_image(vk_ctx.device.logical, vk_ctx.swapchain.handle,
+                vk_ctx.device.image_available_sems[0], &frame_ctx.img_idx);
+        r_reset_begin_cmd_buff(vk_ctx.device.cmd_buffs[0]);
+    }
 
     return result;
 }
@@ -326,10 +333,6 @@ Window get_window()
 void begin_drawing(Color color)
 {
     begin_timer();
-    r_wait_reset_fence(vk_ctx.device.logical, &vk_ctx.device.fences[0]);
-    r_acquire_next_image(vk_ctx.device.logical, vk_ctx.swapchain.handle,
-                         vk_ctx.device.image_available_sems[0], &frame_ctx.img_idx);
-    r_reset_begin_cmd_buff(vk_ctx.device.cmd_buffs[0]);
 
     if (!standard.options.disable_render_pass)
         begin_render_pass(color);
@@ -1618,8 +1621,6 @@ void draw_mesh(Mesh mesh)
     bind_graphics_pipeline(pipeline.handle);
     set_viewport_scissor();
 
-    TODO("anim_buffer_updated");
-
     /* at some point we may want to get the model matrix from scene data */
     standard.draw_model.push_const.model = MatrixToFloatV(get_model());
 
@@ -2291,17 +2292,16 @@ void update_model_animation_vertex_buffers(Model model)
         if (buffer_needs_update) {
             // TODO: need barriers?
 
-            VkCommandBuffer tmp_cmd_buff = r_begin_tmp_cmd_buff(vk_ctx.device.command_pool, vk_ctx.device.logical); {
-                size_t size = mesh->cpu.anim_positions.count*sizeof(*mesh->cpu.anim_positions.items);
-                memcpy(mesh->gpu.staging_vertex.mapped, mesh->cpu.anim_positions.items, size);
-                r_copy_buffer(tmp_cmd_buff, mesh->gpu.staging_vertex.info.buffer, mesh->gpu.vertex.info.buffer, size);
+            VkCommandBuffer tmp_cmd_buff = vk_ctx.device.cmd_buffs[0];
+            size_t size = mesh->cpu.anim_positions.count*sizeof(*mesh->cpu.anim_positions.items);
+            memcpy(mesh->gpu.staging_vertex.mapped, mesh->cpu.anim_positions.items, size);
+            r_copy_buffer(tmp_cmd_buff, mesh->gpu.staging_vertex.info.buffer, mesh->gpu.vertex.info.buffer, size);
 
-                if (mesh->cpu.normals.count) {
-                    size = mesh->cpu.anim_normals.count*sizeof(*mesh->cpu.anim_normals.items);
-                    memcpy(mesh->gpu.staging_normal.mapped, mesh->cpu.anim_normals.items, size);
-                    r_copy_buffer(tmp_cmd_buff, mesh->gpu.staging_normal.info.buffer, mesh->gpu.normal.info.buffer, size);
-                }
-            } r_end_tmp_cmd_buff(vk_ctx.device.queue, vk_ctx.device.logical, vk_ctx.device.command_pool, tmp_cmd_buff);
+            if (mesh->cpu.normals.count) {
+                size = mesh->cpu.anim_normals.count*sizeof(*mesh->cpu.anim_normals.items);
+                memcpy(mesh->gpu.staging_normal.mapped, mesh->cpu.anim_normals.items, size);
+                r_copy_buffer(tmp_cmd_buff, mesh->gpu.staging_normal.info.buffer, mesh->gpu.normal.info.buffer, size);
+            }
         }
     }
 }

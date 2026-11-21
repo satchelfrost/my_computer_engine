@@ -24,17 +24,9 @@ int main()
         .fovy     = 45.0f,
     };
 
-    for (size_t i = 0; i < anims.count; i++) {
-        Model_Animation animation = anims.items[i];
-        printf("animation %s - key frame count %zu\n", animation.name, animation.key_frames.count);
-    }
-
     size_t anim_curr_frame = 0;
     int anim_index = 0;
     Model_Animation animation = anims.items[0];
-    float animation_time = 0;
-    float anim_duration = animation.key_frames.count/60.0f;
-    printf("anim duration %f\n", anim_duration);
 
     while (!window_should_close()) {
         if (is_key_pressed(KEY_RIGHT)) {
@@ -46,17 +38,8 @@ int main()
         anim_curr_frame = (anim_curr_frame + 1)%animation.key_frames.count;
         update_model_animation(model, anims.items[anim_index], anim_curr_frame);
 
-//        float dt = get_frame_time();
-//        animation_time += dt;
-//        if (animation_time > animation.key_frames.count) {
-//            printf("reset\n");
-//            animation_time = 0;
-//        }
-//        update_model_animation(model, anims.items[0], animation_time/anim_duration*animation.key_frames.count);
-
         begin_drawing(BLUE); {
             begin_mode_3D(camera); {
-                //rotate_y(get_time());
                 draw_model(model);
             } end_mode_3D();
 
