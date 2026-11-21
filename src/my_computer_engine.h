@@ -414,8 +414,6 @@ typedef enum {
 } Material_Mask;
 
 typedef struct {
-    bool anim_buffer_updated;
-
     struct {
         struct { Vector3 *items; size_t count; size_t capacity;} positions;
         struct {uint32_t *items; size_t count; size_t capacity;} indices;

@@ -317,6 +317,7 @@ Rvk_Buffer r_create_host_visible_buffer_from_existing(Rvk_Device device, Rvk_Buf
 void r_map_buffer(Rvk_Device device, Rvk_Buffer *buffer);
 void r_unmap_buffer(Rvk_Device device, Rvk_Buffer *buffer);
 Rvk_Buffer r_create_compute_buffer(Rvk_Device device, size_t size);
+void r_copy_buffer(VkCommandBuffer cmd_buff, VkBuffer src, VkBuffer dst, size_t size);
 void r_destroy_rvk_buffer(VkDevice device, Rvk_Buffer buffer);
 bool r_wait_reset_fence(VkDevice device, VkFence *fence);
 bool r_acquire_next_image(VkDevice device, VkSwapchainKHR swapchain, VkSemaphore image_available, uint32_t *image_index);
@@ -1580,6 +1581,12 @@ Rvk_Buffer r_create_compute_buffer_with_data(Rvk_Device device, size_t size, voi
     vkFreeMemory(device.logical, stg_buff.memory, NULL);
 
     return buff;
+}
+
+void r_copy_buffer(VkCommandBuffer cmd_buff, VkBuffer src, VkBuffer dst, size_t size)
+{
+    VkBufferCopy copy_region = {.size = size};
+    vkCmdCopyBuffer(cmd_buff, src, dst, 1, &copy_region);
 }
 
 Rvk_Buffer r_create_host_visible_buffer_from_existing(Rvk_Device device, Rvk_Buffer device_visible)

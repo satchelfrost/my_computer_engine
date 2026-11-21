@@ -1593,9 +1593,6 @@ void draw_model(Model model)
 
     for (size_t i = 0; i < model.meshes.count; i++) {
         Mesh mesh = model.meshes.items[i];
-
-        TODO("anim_buffer_updated");
-
         standard.draw_model.push_const.attribute_mask = mesh.gpu.mask;
         standard.draw_model.push_const.material_mask = mesh.material.mask;
         uint32_t color = color_to_uint32_t(mesh.material.color);
@@ -2254,12 +2251,12 @@ void update_model_animation_vertex_buffers(Model model)
 {
     for (size_t i = 0; i < model.meshes.count; i++) {
         Mesh *mesh = &model.meshes.items[i];
-        mesh->anim_buffer_updated = false;
         Vector3 anim_vertex = {0};
         Vector3 anim_normal = {0};
         size_t bone_index   = 0;
         size_t bone_counter = 0;
         float bone_weight = 0.0f;
+        bool buffer_needs_update = false;
 
         if (!(mesh->cpu.weights.count && mesh->cpu.bone_indices.count)) continue;
 
@@ -2279,7 +2276,7 @@ void update_model_animation_vertex_buffers(Model model)
                 mesh->cpu.anim_positions.items[p].x += anim_vertex.x*bone_weight;
                 mesh->cpu.anim_positions.items[p].y += anim_vertex.y*bone_weight;
                 mesh->cpu.anim_positions.items[p].z += anim_vertex.z*bone_weight;
-                mesh->anim_buffer_updated = true;
+                buffer_needs_update = true;
 
                 if (mesh->cpu.normals.count && mesh->cpu.anim_normals.count) {
                     anim_normal = mesh->cpu.normals.items[p];
@@ -2289,6 +2286,22 @@ void update_model_animation_vertex_buffers(Model model)
                     mesh->cpu.anim_normals.items[p].z += anim_normal.z*bone_weight;
                 }
             }
+        }
+
+        if (buffer_needs_update) {
+            // TODO: need barriers?
+
+            VkCommandBuffer tmp_cmd_buff = r_begin_tmp_cmd_buff(vk_ctx.device.command_pool, vk_ctx.device.logical); {
+                size_t size = mesh->cpu.anim_positions.count*sizeof(*mesh->cpu.anim_positions.items);
+                memcpy(mesh->gpu.staging_vertex.mapped, mesh->cpu.anim_positions.items, size);
+                r_copy_buffer(tmp_cmd_buff, mesh->gpu.staging_vertex.info.buffer, mesh->gpu.vertex.info.buffer, size);
+
+                if (mesh->cpu.normals.count) {
+                    size = mesh->cpu.anim_normals.count*sizeof(*mesh->cpu.anim_normals.items);
+                    memcpy(mesh->gpu.staging_normal.mapped, mesh->cpu.anim_normals.items, size);
+                    r_copy_buffer(tmp_cmd_buff, mesh->gpu.staging_normal.info.buffer, mesh->gpu.normal.info.buffer, size);
+                }
+            } r_end_tmp_cmd_buff(vk_ctx.device.queue, vk_ctx.device.logical, vk_ctx.device.command_pool, tmp_cmd_buff);
         }
     }
 }

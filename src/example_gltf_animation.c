@@ -5,6 +5,7 @@
 
 int main()
 {
+    set_target_fps(60);
     init_window(500, 500, "gltf animation");
     Model model = load_model_gltf(GLTF_MODEL);
     Model_Animations anims = load_model_animations_gltf(GLTF_MODEL);
@@ -28,9 +29,31 @@ int main()
         printf("animation %s - key frame count %zu\n", animation.name, animation.key_frames.count);
     }
 
-    update_model_animation(model, anims.items[0], 0);
+    size_t anim_curr_frame = 0;
+    int anim_index = 0;
+    Model_Animation animation = anims.items[0];
+    float animation_time = 0;
+    float anim_duration = animation.key_frames.count/60.0f;
+    printf("anim duration %f\n", anim_duration);
 
     while (!window_should_close()) {
+        if (is_key_pressed(KEY_RIGHT)) {
+            anim_index = (anim_index + 1)%anims.count;
+            animation = anims.items[anim_index];
+            printf("animation name %s\n", animation.name);
+        }
+
+        anim_curr_frame = (anim_curr_frame + 1)%animation.key_frames.count;
+        update_model_animation(model, anims.items[anim_index], anim_curr_frame);
+
+//        float dt = get_frame_time();
+//        animation_time += dt;
+//        if (animation_time > animation.key_frames.count) {
+//            printf("reset\n");
+//            animation_time = 0;
+//        }
+//        update_model_animation(model, anims.items[0], animation_time/anim_duration*animation.key_frames.count);
+
         begin_drawing(BLUE); {
             begin_mode_3D(camera); {
                 //rotate_y(get_time());
