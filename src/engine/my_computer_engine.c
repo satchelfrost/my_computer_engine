@@ -1355,6 +1355,8 @@ void unload_model(Model model)
         da_free(mesh.cpu.tangets);
         da_free(mesh.cpu.colors);
         da_free(mesh.cpu.indices);
+        da_free(mesh.cpu.anim_positions);
+        da_free(mesh.cpu.anim_normals);
 
         destroy_buffer(mesh.gpu.vertex);
         destroy_buffer(mesh.gpu.index);
@@ -1365,8 +1367,10 @@ void unload_model(Model model)
         if (!rvk_buffers_equal(mesh.gpu.uv,             phony)) destroy_buffer(mesh.gpu.uv);
         if (!rvk_buffers_equal(mesh.gpu.tanget,         phony)) destroy_buffer(mesh.gpu.tanget);
         if (!rvk_buffers_equal(mesh.gpu.color,          phony)) destroy_buffer(mesh.gpu.color);
-        if (!rvk_buffers_equal(mesh.gpu.joint,          phony)) destroy_buffer(mesh.gpu.joint);
+        if (!rvk_buffers_equal(mesh.gpu.bone_index,     phony)) destroy_buffer(mesh.gpu.bone_index);
         if (!rvk_buffers_equal(mesh.gpu.weight,         phony)) destroy_buffer(mesh.gpu.weight);
+        if (!rvk_buffers_equal(mesh.gpu.staging_vertex, phony)) destroy_buffer(mesh.gpu.staging_vertex);
+        if (!rvk_buffers_equal(mesh.gpu.staging_normal, phony)) destroy_buffer(mesh.gpu.staging_normal);
     }
 
     for (size_t i = 0; i < model.textures.count; i++) {
@@ -1401,7 +1405,6 @@ void load_model_gpu(Model *model)
         /* vertex and index buffers are required, everything else is optional */
         size_t size = mesh->cpu.positions.count*sizeof(*mesh->cpu.positions.items);
         assert(size);
-        //TODO("create_host_visible_vertex_buffer if weights exist");
         mesh->gpu.vertex = create_vertex_buffer(size, mesh->cpu.positions.items);
         size = mesh->cpu.indices.count*sizeof(*mesh->cpu.indices.items);
         assert(size);
@@ -1410,7 +1413,6 @@ void load_model_gpu(Model *model)
         size = mesh->cpu.normals.count*sizeof(*mesh->cpu.normals.items);
         if (size) {
             assert(mesh->gpu.normal.info.buffer == NULL);
-            //TODO("create_mapped_compute_buffer if weights exist");
             mesh->gpu.normal = create_compute_buffer_with_data(size, mesh->cpu.normals.items);
             mesh->gpu.mask |= 1<<ATTRIBUTE_NORMAL;
         } else mesh->gpu.normal = model->phony.buffer;
@@ -1436,12 +1438,12 @@ void load_model_gpu(Model *model)
             mesh->gpu.mask |= 1<<ATTRIBUTE_TANGET;
         } else mesh->gpu.tanget = model->phony.buffer;
 
-        size = mesh->cpu.joints.count*sizeof(*mesh->cpu.joints.items);
+        size = mesh->cpu.bone_indices.count*sizeof(*mesh->cpu.bone_indices.items);
         if (size) {
-            assert(mesh->gpu.joint.info.buffer == NULL);
-            mesh->gpu.joint = create_compute_buffer_with_data(size, mesh->cpu.joints.items);
-            mesh->gpu.mask |= 1<<ATTRIBUTE_JOINT;
-        } else mesh->gpu.joint = model->phony.buffer;
+            assert(mesh->gpu.bone_index.info.buffer == NULL);
+            mesh->gpu.bone_index = create_compute_buffer_with_data(size, mesh->cpu.bone_indices.items);
+            mesh->gpu.mask |= 1<<ATTRIBUTE_BONE_INDEX;
+        } else mesh->gpu.bone_index = model->phony.buffer;
 
         size = mesh->cpu.weights.count*sizeof(*mesh->cpu.weights.items);
         if (size) {
@@ -1449,6 +1451,26 @@ void load_model_gpu(Model *model)
             mesh->gpu.weight = create_compute_buffer_with_data(size, mesh->cpu.weights.items);
             mesh->gpu.mask |= 1<<ATTRIBUTE_WEIGHT;
         } else mesh->gpu.weight = model->phony.buffer;
+
+        /* allocate animation positions and normals if we have joints */
+        if (mesh->gpu.mask & 1<<ATTRIBUTE_BONE_INDEX) {
+            bool has_normals = mesh->gpu.mask & 1<<ATTRIBUTE_NORMAL;
+            Vector3 v = {0};
+            for (size_t m = 0; m < mesh->cpu.positions.count; m++) {
+                da_append(&mesh->cpu.anim_positions, v);
+                if (has_normals) da_append(&mesh->cpu.anim_normals, v);
+            }
+
+            size = mesh->cpu.positions.count*sizeof(*mesh->cpu.positions.items);
+            mesh->gpu.staging_vertex = create_mapped_staging_buffer(size);
+
+            size = mesh->cpu.normals.count*sizeof(*mesh->cpu.normals.items);
+            if (has_normals) mesh->gpu.staging_normal = create_mapped_staging_buffer(size);
+            else             mesh->gpu.staging_normal = model->phony.buffer;
+        } else {
+            mesh->gpu.staging_vertex = model->phony.buffer;
+            mesh->gpu.staging_normal = model->phony.buffer;
+        }
 
         /* get the image info */
         VkDescriptorImageInfo *albedo_image_info = NULL;
@@ -1520,7 +1542,7 @@ void load_model_gpu(Model *model)
                 .descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,
                 .descriptorCount = 1,
                 .dstSet = mesh->gpu.ds,
-                .pBufferInfo = &mesh->gpu.joint.info,
+                .pBufferInfo = &mesh->gpu.bone_index.info,
             },
             {
                 .sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
@@ -1572,6 +1594,8 @@ void draw_model(Model model)
     for (size_t i = 0; i < model.meshes.count; i++) {
         Mesh mesh = model.meshes.items[i];
 
+        TODO("anim_buffer_updated");
+
         standard.draw_model.push_const.attribute_mask = mesh.gpu.mask;
         standard.draw_model.push_const.material_mask = mesh.material.mask;
         uint32_t color = color_to_uint32_t(mesh.material.color);
@@ -1596,6 +1620,8 @@ void draw_mesh(Mesh mesh)
     Rvk_Pipeline pipeline = get_pipeline(PIPELINE_DRAW_MODEL);
     bind_graphics_pipeline(pipeline.handle);
     set_viewport_scissor();
+
+    TODO("anim_buffer_updated");
 
     /* at some point we may want to get the model matrix from scene data */
     standard.draw_model.push_const.model = MatrixToFloatV(get_model());
@@ -2226,7 +2252,45 @@ void update_model_animation_bones(Model model, Model_Animation anim, float frame
 
 void update_model_animation_vertex_buffers(Model model)
 {
-    UNUSED(model);
+    for (size_t i = 0; i < model.meshes.count; i++) {
+        Mesh *mesh = &model.meshes.items[i];
+        mesh->anim_buffer_updated = false;
+        Vector3 anim_vertex = {0};
+        Vector3 anim_normal = {0};
+        size_t bone_index   = 0;
+        size_t bone_counter = 0;
+        float bone_weight = 0.0f;
+
+        if (!(mesh->cpu.weights.count && mesh->cpu.bone_indices.count)) continue;
+
+        for (size_t p = 0; p < mesh->cpu.positions.count; p++) {
+            mesh->cpu.anim_positions.items[p] = (Vector3){0.0f, 0.0f, 0.0f};
+            if (mesh->cpu.anim_normals.count)
+                mesh->cpu.anim_normals.items[p] = (Vector3){0.0f, 0.0f, 0.0f};
+
+            for (size_t b = 0; b < 4; b++, bone_counter++) {
+                bone_weight = mesh->cpu.weights.items[bone_counter];
+                bone_index  = mesh->cpu.bone_indices.items[bone_counter];
+
+                if (bone_weight == 0.0f) continue;
+
+                anim_vertex = mesh->cpu.positions.items[p];
+                anim_vertex = Vector3Transform(anim_vertex, model.bones.items[bone_index].matrix);
+                mesh->cpu.anim_positions.items[p].x += anim_vertex.x*bone_weight;
+                mesh->cpu.anim_positions.items[p].y += anim_vertex.y*bone_weight;
+                mesh->cpu.anim_positions.items[p].z += anim_vertex.z*bone_weight;
+                mesh->anim_buffer_updated = true;
+
+                if (mesh->cpu.normals.count && mesh->cpu.anim_normals.count) {
+                    anim_normal = mesh->cpu.normals.items[p];
+                    anim_normal = Vector3Transform(anim_normal, MatrixTranspose(MatrixInvert(model.bones.items[bone_index].matrix)));
+                    mesh->cpu.anim_normals.items[p].x += anim_normal.x*bone_weight;
+                    mesh->cpu.anim_normals.items[p].y += anim_normal.y*bone_weight;
+                    mesh->cpu.anim_normals.items[p].z += anim_normal.z*bone_weight;
+                }
+            }
+        }
+    }
 }
 
 void update_model_animation(Model model, Model_Animation anim, float frame)

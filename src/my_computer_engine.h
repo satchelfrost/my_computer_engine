@@ -400,7 +400,7 @@ typedef enum {
     ATTRIBUTE_UV,
     ATTRIBUTE_TANGET,
     ATTRIBUTE_COLOR,
-    ATTRIBUTE_JOINT,
+    ATTRIBUTE_BONE_INDEX,
     ATTRIBUTE_WEIGHT,
     ATTRIBUTE_COUNT,
 } Attribute_Mask;
@@ -414,6 +414,8 @@ typedef enum {
 } Material_Mask;
 
 typedef struct {
+    bool anim_buffer_updated;
+
     struct {
         struct { Vector3 *items; size_t count; size_t capacity;} positions;
         struct {uint32_t *items; size_t count; size_t capacity;} indices;
@@ -421,8 +423,10 @@ typedef struct {
         struct { Vector2 *items; size_t count; size_t capacity;} uvs;
         struct { Vector4 *items; size_t count; size_t capacity;} tangets;
         struct {uint32_t *items; size_t count; size_t capacity;} colors;
-        struct { uint8_t *items; size_t count; size_t capacity;} joints;
-        struct { Vector4 *items; size_t count; size_t capacity;} weights;
+        struct { uint8_t *items; size_t count; size_t capacity;} bone_indices;
+        struct { float   *items; size_t count; size_t capacity;} weights;
+        struct { Vector3 *items; size_t count; size_t capacity;} anim_positions;
+        struct { Vector3 *items; size_t count; size_t capacity;} anim_normals;
     } cpu;
 
     struct {
@@ -441,8 +445,10 @@ typedef struct {
         Rvk_Buffer uv;
         Rvk_Buffer tanget;
         Rvk_Buffer color;
-        Rvk_Buffer joint;
+        Rvk_Buffer bone_index;
         Rvk_Buffer weight;
+        Rvk_Buffer staging_vertex;
+        Rvk_Buffer staging_normal;
         VkDescriptorSet ds;
     } gpu;
 } Mesh;

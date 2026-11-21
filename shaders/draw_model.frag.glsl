@@ -5,8 +5,6 @@ layout(location = 1) in vec2 in_uv;
 layout(location = 2) in vec4 in_color;
 layout(location = 3) in vec4 in_tanget;
 layout(location = 4) in vec3 in_position;
-layout(location = 5) in vec4 in_joint;
-layout(location = 6) in vec4 in_weight;
 
 layout(location = 0) out vec4 out_color;
 
@@ -26,7 +24,7 @@ layout(push_constant) uniform constants {
 #define ATTRIBUTE_UV     (1<<1)
 #define ATTRIBUTE_TANGET (1<<2)
 #define ATTRIBUTE_COLOR  (1<<3)
-#define ATTRIBUTE_JOINT  (1<<4)
+#define ATTRIBUTE_BONE   (1<<4)
 #define ATTRIBUTE_WEIGHT (1<<5)
 
 #define MATERIAL_NO_TEXTURES        (1<<0)

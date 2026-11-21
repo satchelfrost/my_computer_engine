@@ -42,7 +42,7 @@ void main()
         if (length(in_uv - vec2(0.5, 0.5)) > 0.5) discard;
     break;
     case SHAPE_2D_RECTANGLE_ROUNDED:
-        if (!(in_circles || in_cutout)) discard;
+        if (!(!in_circles && in_cutout)) discard;
 
     break;
     case SHAPE_2D_RECTANGLE:

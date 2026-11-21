@@ -103,10 +103,10 @@ void populate_attributes(Mesh *mesh, cgltf_attribute attribute)
         assert(attribute.data->component_type == cgltf_component_type_r_8u);
         uint8_t *joints = GLTF_ATTR_PTR(attribute.data, uint8_t);
         for (size_t i = 0; i < attribute.data->count; i++) {
-            da_append(&mesh->cpu.joints, joints[i*4+0]);
-            da_append(&mesh->cpu.joints, joints[i*4+1]);
-            da_append(&mesh->cpu.joints, joints[i*4+2]);
-            da_append(&mesh->cpu.joints, joints[i*4+3]);
+            da_append(&mesh->cpu.bone_indices, joints[i*4+0]);
+            da_append(&mesh->cpu.bone_indices, joints[i*4+1]);
+            da_append(&mesh->cpu.bone_indices, joints[i*4+2]);
+            da_append(&mesh->cpu.bone_indices, joints[i*4+3]);
         }
     break;
     case cgltf_attribute_type_weights:
@@ -132,7 +132,10 @@ void populate_attributes(Mesh *mesh, cgltf_attribute attribute)
                 w.z = weights[i*4+2];
                 w.w = weights[i*4+3];
             }
-            da_append(&mesh->cpu.weights, w);
+            da_append(&mesh->cpu.weights, w.x);
+            da_append(&mesh->cpu.weights, w.y);
+            da_append(&mesh->cpu.weights, w.z);
+            da_append(&mesh->cpu.weights, w.w);
         }
     break;
     case cgltf_attribute_type_custom:
