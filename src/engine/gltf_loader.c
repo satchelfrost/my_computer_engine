@@ -100,13 +100,26 @@ void populate_attributes(Mesh *mesh, cgltf_attribute attribute)
     break;
     case cgltf_attribute_type_joints:
         assert(attribute.data->type == cgltf_type_vec4);
-        assert(attribute.data->component_type == cgltf_component_type_r_8u);
-        uint8_t *joints = GLTF_ATTR_PTR(attribute.data, uint8_t);
-        for (size_t i = 0; i < attribute.data->count; i++) {
-            da_append(&mesh->cpu.bone_indices, joints[i*4+0]);
-            da_append(&mesh->cpu.bone_indices, joints[i*4+1]);
-            da_append(&mesh->cpu.bone_indices, joints[i*4+2]);
-            da_append(&mesh->cpu.bone_indices, joints[i*4+3]);
+
+        if (attribute.data->component_type == cgltf_component_type_r_8u) {
+            uint8_t *joints = GLTF_ATTR_PTR(attribute.data, uint8_t);
+            for (size_t i = 0; i < attribute.data->count; i++) {
+                da_append(&mesh->cpu.bone_indices, joints[i*4+0]);
+                da_append(&mesh->cpu.bone_indices, joints[i*4+1]);
+                da_append(&mesh->cpu.bone_indices, joints[i*4+2]);
+                da_append(&mesh->cpu.bone_indices, joints[i*4+3]);
+            }
+
+        } else if (attribute.data->component_type == cgltf_component_type_r_16u) {
+            uint16_t *joints = GLTF_ATTR_PTR(attribute.data, uint16_t);
+            for (size_t i = 0; i < attribute.data->count; i++) {
+                da_append(&mesh->cpu.bone_indices, joints[i*4+0]);
+                da_append(&mesh->cpu.bone_indices, joints[i*4+1]);
+                da_append(&mesh->cpu.bone_indices, joints[i*4+2]);
+                da_append(&mesh->cpu.bone_indices, joints[i*4+3]);
+            }
+        } else {
+            assert(0 && "attribute type needs to be 8 or 16 bit for joints (bones)");
         }
     break;
     case cgltf_attribute_type_weights:
@@ -313,7 +326,8 @@ Model load_model_gltf_into_memory(const char *file_path)
     /* load images */
     size_t checkpoint = temp_save(); {
         for (size_t i = 0; i < data->images_count; i++) {
-            const char *image_path = temp_sprintf(SV_Fmt"%s", SV_Arg(path_prefix), data->images[i].uri);
+            char *asset_name = (data->images[i].uri) ? data->images[i].uri : data->images[i].name;
+            const char *image_path = temp_sprintf(SV_Fmt"%s.png", SV_Arg(path_prefix), asset_name);
             Image image = load_image(image_path);
             image.type = model.images.items[i].type;
             da_append(&model.images, image);

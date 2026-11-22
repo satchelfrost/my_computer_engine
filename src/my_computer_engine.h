@@ -421,7 +421,7 @@ typedef struct {
         struct { Vector2 *items; size_t count; size_t capacity;} uvs;
         struct { Vector4 *items; size_t count; size_t capacity;} tangets;
         struct {uint32_t *items; size_t count; size_t capacity;} colors;
-        struct { uint8_t *items; size_t count; size_t capacity;} bone_indices;
+        struct {uint16_t *items; size_t count; size_t capacity;} bone_indices;
         struct { float   *items; size_t count; size_t capacity;} weights;
         struct { Vector3 *items; size_t count; size_t capacity;} anim_positions;
         struct { Vector3 *items; size_t count; size_t capacity;} anim_normals;

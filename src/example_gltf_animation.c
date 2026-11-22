@@ -1,7 +1,8 @@
 #include "my_computer_engine.h"
 
 #define GLTF_MODEL "assets/robot.glb"
-// #define GLTF_MODEL "assets/sponza/Sponza.gltf"
+//#define GLTF_MODEL "assets/skater/skater.glb"
+//#define GLTF_MODEL "assets/sponza/Sponza.gltf"
 
 int main()
 {
@@ -29,6 +30,8 @@ int main()
     Model_Animation animation = anims.items[0];
 
     while (!window_should_close()) {
+        update_camera_free(&camera);
+
         if (is_key_pressed(KEY_RIGHT)) {
             anim_index = (anim_index + 1)%anims.count;
             animation = anims.items[anim_index];
